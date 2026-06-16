@@ -2734,7 +2734,9 @@ function generatePlan(s){
       let bestLs = null, bestLsEff = -Infinity;
       if(!isFresh){
         const labL = labourCap - usedLabour;
-        const pasL = (s.pastureHa||0) - usedPastureHa;
+        const pasL = (s.landFixed === false)
+          ? (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - perennialFootprint() - Math.max(usedCoolHa, usedWarmHa) - usedPastureHa
+          : (s.pastureHa||0) - usedPastureHa;
         const swL  = swBudget - usedSurfaceWaterHa;
         for(const lc of lsFgCands){
           if(lsBlocked.has(lc.ls.name)) continue;
@@ -2763,7 +2765,9 @@ function generatePlan(s){
         const labL2 = labourCap - usedLabour;
         const pasL2 = isAquaticLivestock(bestLs.ls)
           ? swBudget - usedSurfaceWaterHa
-          : (s.pastureHa||0) - usedPastureHa;
+          : (s.landFixed === false)
+            ? (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - perennialFootprint() - Math.max(usedCoolHa, usedWarmHa) - usedPastureHa
+            : (s.pastureHa||0) - usedPastureHa;
         const maxByLab = bestLs.labourPerStep > 0 ? Math.floor(labL2 / bestLs.labourPerStep) : 99;
         const maxByPas = bestLs.spaceHaPerStep > 0 ? Math.floor((pasL2+0.0001) / bestLs.spaceHaPerStep) : 99;
         const capServes = targetServes * lsCapFrac - lsServesPerDay(bestLs.ls, bestLs.usedCount);
@@ -2850,7 +2854,7 @@ function generatePlan(s){
         const season2p1 = isAnnual2 ? getCropSeason(best.crop) : null;
         let available;
         if(s.landFixed === false){
-          const totalL = (s.annualHa||0) + (s.perennialHa||0);
+          const totalL = (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - usedPastureHa;
           if(isAnnual2){
             // Annuals use the combined pool minus physical perennial footprint and their seasonal usage
             available = totalL - perennialFootprint() - (season2p1==="warm" ? usedWarmHa : usedCoolHa);
@@ -2973,7 +2977,7 @@ function generatePlan(s){
         const s15 = isAnn ? getCropSeason(top.crop) : null;
         const landAvail15 = s.landFixed === false
             ? (()=>{
-                const totalL15 = (s.annualHa||0) + (s.perennialHa||0);
+                const totalL15 = (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - usedPastureHa;
                 if(isAnn){
                   return totalL15 - perennialFootprint() - (s15==="warm" ? usedWarmHa : usedCoolHa);
                 } else {
@@ -3043,7 +3047,7 @@ function generatePlan(s){
       // Re-compute all remaining budgets each iteration
       const pf2        = perennialFootprint();
       const maxBed2    = Math.max(usedCoolHa, usedWarmHa);
-      const totalL2    = (s.annualHa||0) + (s.perennialHa||0);
+      const totalL2    = (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - usedPastureHa;
       const coolLeft2     = s.landFixed === false ? totalL2 - pf2 - usedCoolHa     : eb.annualHa    - usedCoolHa;
       const warmLeft2     = s.landFixed === false ? totalL2 - pf2 - usedWarmHa     : eb.annualHa    - usedWarmHa;
       // Per-layer space remaining — each layer only competes with itself
@@ -3055,7 +3059,7 @@ function generatePlan(s){
       };
       const anyPerennialLeft = Object.values(layerSpace2).some(v => v > 0.001);
       const labourLeft    = labourCap      - usedLabour;
-      const pastureLeft   = (s.pastureHa||0) - usedPastureHa;
+      const pastureLeft   = s.landFixed === false ? totalL2 - pf2 - maxBed2 - usedPastureHa : (s.pastureHa||0) - usedPastureHa;
       const swLeft2       = swBudget - usedSurfaceWaterHa;
 
       if(coolLeft2 < 0.001 && warmLeft2 < 0.001 && !anyPerennialLeft && labourLeft < 1 && pastureLeft < 0.001) break;
@@ -3992,8 +3996,9 @@ function landUseBreakdown(s, p){
   const annual    = Math.max(p.usedCoolHa||0, p.usedWarmHa||0);
   const perennial = p.usedPerennialHa||0;
   const pasture   = p.usedPastureHa||0;
-  const pond      = p.usedSurfaceWaterHa||0;
-  const total     = (s.annualHa||0)+(s.perennialHa||0)+(s.pastureHa||0)+(s.surfaceWaterHa||0);
+  const damOn     = s.irrigationDam;
+  const pond      = damOn ? sizeDam(p).footprintHa : (p.usedSurfaceWaterHa||0);
+  const total     = (s.annualHa||0)+(s.perennialHa||0)+(s.pastureHa||0)+(damOn ? 0 : (s.surfaceWaterHa||0));
   const usedSum   = annual+perennial+pasture+pond;
   const vacant    = Math.max(0, total - usedSum);
   return {annual, perennial, pasture, pond, vacant, total, usedSum};
@@ -4002,7 +4007,7 @@ const HATCH = "repeating-linear-gradient(45deg,#E4DBC4 0 5px,#D3C8AC 5px 10px)";
 const HATCH_LIGHT = "repeating-linear-gradient(45deg,rgba(255,255,255,.18) 0 4px,rgba(0,0,0,.06) 4px 8px)";
 function landCompositionFigure(s, p){
   const b = landUseBreakdown(s, p);
-  const denom = b.total > 0 ? b.total : 1;
+  const denom = Math.max(b.total, b.usedSum) > 0 ? Math.max(b.total, b.usedSum) : 1;
   const layers = p.layers || {canopy:0, trees:0, plants:0};
   const layerDefs = [
     {key:"canopy", label:"Canopy (≥25m)", color:LAYER_COLORS_BAR.canopy},
@@ -4033,7 +4038,7 @@ function landCompositionFigure(s, p){
     {label:"Annual beds", val:b.annual,    color:LAND_SEG_COLORS.annual},
     {label:"Perennial",   val:b.perennial, color:null, perennial:true},
     {label:"Pasture",     val:b.pasture,   color:LAND_SEG_COLORS.pasture},
-    {label:"Pond / water",val:b.pond,      color:LAND_SEG_COLORS.pond},
+    {label:s.irrigationDam?"Irrigation dam":"Pond / water",val:b.pond,      color:LAND_SEG_COLORS.pond},
     {label:"Vacant",      val:b.vacant,    color:LAND_SEG_COLORS.vacant, hatch:true},
   ];
   const barSegs = segs.filter(x=>x.val>0.00005).map((x,i)=>{
@@ -4161,12 +4166,12 @@ function compactBudgetStrip(s, p){
 
   // Land segments (reuse landUseBreakdown)
   const b = landUseBreakdown(s, p);
-  const lnDenom = b.total>0?b.total:1;
+  const lnDenom = Math.max(b.total, b.usedSum)>0?Math.max(b.total, b.usedSum):1;
   const lnSegs = [
     {label:"Annual beds", val:b.annual, color:LAND_SEG_COLORS.annual},
     {label:"Perennial", val:b.perennial, color:LAND_SEG_COLORS.perennial},
     {label:"Pasture", val:b.pasture, color:LAND_SEG_COLORS.pasture},
-    {label:"Pond", val:b.pond, color:LAND_SEG_COLORS.pond},
+    {label:s.irrigationDam?"Dam":"Pond", val:b.pond, color:LAND_SEG_COLORS.pond},
     {label:"Vacant", val:b.vacant, color:LAND_SEG_COLORS.vacant, hatch:true},
   ].filter(x=>x.val>0.00005);
   const lnBar = lnSegs.map((x,i)=>`<div title="${x.label}: ${fmtHa(x.val)}" style="width:${x.val/lnDenom*100}%;background:${x.hatch?HATCH:x.color};${i>0?'border-left:1px solid rgba(61,46,28,.22)':''}"></div>`).join("");
