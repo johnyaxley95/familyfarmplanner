@@ -1347,6 +1347,109 @@ const ZONES = [
   {id:"E",  code:"E",  label:"Boreal / subarctic",        sub:"Long cold winters, short summers"},
 ]
 
+// Township → coordinates (SILO DataDrill) + a pre-filled Köppen zone & annual rainfall.
+// Zones use the app's simplified 12-code scheme; rainfall is an approximate annual mean.
+// Both zone and rainfall stay editable after selection — the town just pins lat/lon.
+const TOWNS = [
+  // Western Australia
+  {n:"Perth",st:"WA",lat:-31.95,lon:115.86,z:"Cs",r:730},
+  {n:"Mandurah",st:"WA",lat:-32.53,lon:115.72,z:"Cs",r:780},
+  {n:"Bunbury",st:"WA",lat:-33.33,lon:115.64,z:"Cs",r:800},
+  {n:"Busselton",st:"WA",lat:-33.65,lon:115.35,z:"Cs",r:820},
+  {n:"Margaret River",st:"WA",lat:-33.95,lon:115.07,z:"Cs",r:1100},
+  {n:"Augusta",st:"WA",lat:-34.31,lon:115.16,z:"Cs",r:1000},
+  {n:"Manjimup",st:"WA",lat:-34.24,lon:116.15,z:"Cs",r:1000},
+  {n:"Pemberton",st:"WA",lat:-34.45,lon:116.04,z:"Cs",r:1200},
+  {n:"Collie",st:"WA",lat:-33.36,lon:116.16,z:"Cs",r:900},
+  {n:"Albany",st:"WA",lat:-35.02,lon:117.88,z:"Cs",r:930},
+  {n:"Denmark",st:"WA",lat:-34.96,lon:117.35,z:"Cs",r:1100},
+  {n:"Mount Barker",st:"WA",lat:-34.63,lon:117.66,z:"Cs",r:720},
+  {n:"Katanning",st:"WA",lat:-33.69,lon:117.56,z:"Cs",r:480},
+  {n:"Narrogin",st:"WA",lat:-32.94,lon:117.18,z:"Cs",r:500},
+  {n:"Northam",st:"WA",lat:-31.65,lon:116.67,z:"Cs",r:440},
+  {n:"York",st:"WA",lat:-31.89,lon:116.77,z:"Cs",r:440},
+  {n:"Moora",st:"WA",lat:-30.64,lon:116.00,z:"Cs",r:460},
+  {n:"Merredin",st:"WA",lat:-31.48,lon:118.28,z:"Bs",r:320},
+  {n:"Dalwallinu",st:"WA",lat:-30.28,lon:116.66,z:"Bs",r:360},
+  {n:"Geraldton",st:"WA",lat:-28.77,lon:114.61,z:"Bs",r:450},
+  {n:"Kalgoorlie",st:"WA",lat:-30.75,lon:121.47,z:"Bs",r:270},
+  {n:"Esperance",st:"WA",lat:-33.86,lon:121.89,z:"Cs",r:620},
+  {n:"Carnarvon",st:"WA",lat:-24.88,lon:113.66,z:"Bw",r:230},
+  {n:"Exmouth",st:"WA",lat:-21.93,lon:114.13,z:"Bw",r:270},
+  {n:"Karratha",st:"WA",lat:-20.74,lon:116.85,z:"Bw",r:300},
+  {n:"Port Hedland",st:"WA",lat:-20.31,lon:118.61,z:"Bw",r:320},
+  {n:"Newman",st:"WA",lat:-23.36,lon:119.73,z:"Bw",r:320},
+  {n:"Broome",st:"WA",lat:-17.96,lon:122.24,z:"Aw",r:600},
+  {n:"Kununurra",st:"WA",lat:-15.78,lon:128.74,z:"Aw",r:800},
+  // South Australia
+  {n:"Adelaide",st:"SA",lat:-34.93,lon:138.60,z:"Cs",r:540},
+  {n:"Mount Gambier",st:"SA",lat:-37.83,lon:140.78,z:"Cs",r:710},
+  {n:"Port Lincoln",st:"SA",lat:-34.73,lon:135.86,z:"Cs",r:480},
+  {n:"Renmark",st:"SA",lat:-34.17,lon:140.75,z:"Bs",r:260},
+  {n:"Whyalla",st:"SA",lat:-33.04,lon:137.56,z:"Bs",r:280},
+  {n:"Port Augusta",st:"SA",lat:-32.49,lon:137.77,z:"Bw",r:250},
+  // Northern Territory
+  {n:"Darwin",st:"NT",lat:-12.46,lon:130.84,z:"Aw",r:1730},
+  {n:"Katherine",st:"NT",lat:-14.47,lon:132.26,z:"Aw",r:970},
+  {n:"Tennant Creek",st:"NT",lat:-19.65,lon:134.19,z:"Bs",r:450},
+  {n:"Alice Springs",st:"NT",lat:-23.70,lon:133.88,z:"Bw",r:280},
+  // Queensland
+  {n:"Brisbane",st:"QLD",lat:-27.47,lon:153.03,z:"Cf",r:1010},
+  {n:"Gold Coast",st:"QLD",lat:-28.00,lon:153.43,z:"Cf",r:1400},
+  {n:"Sunshine Coast",st:"QLD",lat:-26.65,lon:153.09,z:"Cf",r:1700},
+  {n:"Toowoomba",st:"QLD",lat:-27.56,lon:151.95,z:"Cf",r:720},
+  {n:"Bundaberg",st:"QLD",lat:-24.87,lon:152.35,z:"Cf",r:1010},
+  {n:"Rockhampton",st:"QLD",lat:-23.38,lon:150.51,z:"Cf",r:800},
+  {n:"Roma",st:"QLD",lat:-26.57,lon:148.79,z:"Cf",r:580},
+  {n:"Emerald",st:"QLD",lat:-23.53,lon:148.16,z:"Bs",r:640},
+  {n:"Charleville",st:"QLD",lat:-26.40,lon:146.24,z:"Bs",r:500},
+  {n:"Mount Isa",st:"QLD",lat:-20.72,lon:139.49,z:"Bs",r:470},
+  {n:"Mackay",st:"QLD",lat:-21.14,lon:149.19,z:"Aw",r:1600},
+  {n:"Townsville",st:"QLD",lat:-19.26,lon:146.82,z:"Aw",r:1130},
+  {n:"Cairns",st:"QLD",lat:-16.92,lon:145.77,z:"Aw",r:2000},
+  {n:"Innisfail",st:"QLD",lat:-17.52,lon:146.03,z:"Ar",r:3500},
+  // New South Wales
+  {n:"Sydney",st:"NSW",lat:-33.87,lon:151.21,z:"Cf",r:1210},
+  {n:"Newcastle",st:"NSW",lat:-32.93,lon:151.78,z:"Cf",r:1100},
+  {n:"Wollongong",st:"NSW",lat:-34.42,lon:150.89,z:"Cf",r:1300},
+  {n:"Coffs Harbour",st:"NSW",lat:-30.30,lon:153.12,z:"Cf",r:1700},
+  {n:"Lismore",st:"NSW",lat:-28.81,lon:153.28,z:"Cf",r:1300},
+  {n:"Tamworth",st:"NSW",lat:-31.09,lon:150.93,z:"Cf",r:670},
+  {n:"Dubbo",st:"NSW",lat:-32.25,lon:148.60,z:"Cf",r:580},
+  {n:"Wagga Wagga",st:"NSW",lat:-35.11,lon:147.37,z:"Cf",r:570},
+  {n:"Albury",st:"NSW",lat:-36.08,lon:146.92,z:"Cf",r:700},
+  {n:"Orange",st:"NSW",lat:-33.28,lon:149.10,z:"Do",r:900},
+  {n:"Griffith",st:"NSW",lat:-34.29,lon:146.05,z:"Bs",r:400},
+  {n:"Broken Hill",st:"NSW",lat:-31.96,lon:141.47,z:"Bw",r:250},
+  // ACT
+  {n:"Canberra",st:"ACT",lat:-35.28,lon:149.13,z:"Cf",r:620},
+  // Victoria
+  {n:"Melbourne",st:"VIC",lat:-37.81,lon:144.96,z:"Do",r:650},
+  {n:"Geelong",st:"VIC",lat:-38.15,lon:144.36,z:"Do",r:540},
+  {n:"Ballarat",st:"VIC",lat:-37.56,lon:143.85,z:"Do",r:690},
+  {n:"Bendigo",st:"VIC",lat:-36.76,lon:144.28,z:"Do",r:550},
+  {n:"Shepparton",st:"VIC",lat:-36.38,lon:145.40,z:"Bs",r:480},
+  {n:"Mildura",st:"VIC",lat:-34.21,lon:142.15,z:"Bs",r:290},
+  {n:"Warrnambool",st:"VIC",lat:-38.38,lon:142.48,z:"Do",r:740},
+  {n:"Traralgon",st:"VIC",lat:-38.20,lon:146.54,z:"Do",r:750},
+  // Tasmania
+  {n:"Hobart",st:"TAS",lat:-42.88,lon:147.33,z:"Do",r:620},
+  {n:"Launceston",st:"TAS",lat:-41.43,lon:147.14,z:"Do",r:670},
+  {n:"Devonport",st:"TAS",lat:-41.18,lon:146.35,z:"Do",r:980},
+  {n:"Burnie",st:"TAS",lat:-41.05,lon:145.91,z:"Do",r:1000},
+];
+
+// Selecting a town pins coordinates and pre-fills zone + rainfall (still editable).
+function selectTown(name){
+  if(name === "Other"){ state.town = "Other"; }
+  else {
+    const t = TOWNS.find(x => x.n === name);
+    if(t){ state.town = t.n; state.lat = t.lat; state.lon = t.lon; state.climateZone = t.z; state.annualRainfall = t.r; }
+  }
+  state.checkedCrops = null; state.plan = null; renderApp();
+}
+
+
 const MONTHS=["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 const MONTH_INITIALS=["J","F","M","A","M","J","J","A","S","O","N","D"];
 const MONTH_NAMES=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -1866,6 +1969,8 @@ let state={
   hoursPerWeek:20,
   labourSystem:"hand",
   climateZone:"Cs",         // Köppen CLIZ code (one of 12)
+  town:"Perth",             // nearest township — pins lat/lon for climate data, pre-fills zone + rainfall
+  lat:-31.95, lon:115.86,   // coordinates for SILO DataDrill climate lookup
   soilTexture:"heavy",      // TEXTR code: light/medium/heavy/organic/wide
   annualRainfall:750,        // mm/yr
   fertility:"medium",
@@ -4612,6 +4717,12 @@ function renderStep1(){
 }
 function renderStep2(){
   const zoneOpts = ZONES.map(z => `<option value="${z.id}" ${state.climateZone===z.id?"selected":""}>${z.code} — ${z.label}</option>`).join("");
+  const TOWN_STATE_ORDER = ["WA","SA","NT","QLD","NSW","ACT","VIC","TAS"];
+  const townOpts = TOWN_STATE_ORDER.map(st => {
+    const inSt = TOWNS.filter(t => t.st === st);
+    if(!inSt.length) return "";
+    return `<optgroup label="${st}">` + inSt.map(t => `<option value="${t.n}" ${state.town===t.n?"selected":""}>${t.n}</option>`).join("") + `</optgroup>`;
+  }).join("") + `<option value="Other" ${state.town==="Other"?"selected":""}>Other / enter coordinates…</option>`;
   const TEXTURES = [
     {id:"light",  label:"Light",   desc:"Sandy, loamy sand"},
     {id:"medium", label:"Medium",  desc:"Loam, silt loam"},
@@ -4628,6 +4739,15 @@ function renderStep2(){
     <div class="card" style="margin:0">
       <h2>Site conditions</h2>
       <p class="card-desc">Climate zone, soil type, and water availability. Determines which crops are suitable.</p>
+      <div style="margin-bottom:12px">
+        <label>Location (nearest town)</label>
+        <select onchange="selectTown(this.value)" style="width:100%">${townOpts}</select>
+        ${state.town==="Other" ? `
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input type="number" step="0.01" placeholder="lat (e.g. -31.95)" value="${state.lat}" onchange="state.lat=+this.value;state.plan=null;renderApp()" style="width:50%"/>
+          <input type="number" step="0.01" placeholder="lon (e.g. 115.86)" value="${state.lon}" onchange="state.lon=+this.value;state.plan=null;renderApp()" style="width:50%"/>
+        </div>` : `<div style="font-size:11px;color:var(--text-mid);margin-top:3px">Pins ${state.lat}, ${state.lon} for climate data · sets the zone &amp; rainfall below (both editable)</div>`}
+      </div>
       <div style="margin-bottom:12px">
         <label>Climate zone (Köppen)</label>
         <select onchange="state.climateZone=this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100%">${zoneOpts}</select>
@@ -6138,9 +6258,11 @@ function renderStep5(){
 // at selection time for a future "minimise irrigation" objective.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Jan..Dec, mm. ETo = FAO-56 reference-ET estimate for Perth; Rain = BoM Perth Metro long-term mean.
-const PERTH_ETO  = [235, 195, 165, 105, 65, 42, 45, 62, 87, 140, 180, 220];
-const PERTH_RAIN = [16, 13, 20, 35, 86, 127, 147, 125, 80, 40, 24, 10];
+// Jan..Dec, mm. SILO DataDrill (grid -31.95, 115.85), FAO-56 short-crop ETo (et_short_crop)
+// and daily_rain, aggregated to a 2005–2024 monthly normal. Climate baseline / offline
+// fallback until a live per-location SILO fetch is wired in.
+const PERTH_ETO  = [208, 172, 151, 100, 71, 52, 53, 69, 93, 133, 167, 202];
+const PERTH_RAIN = [14, 17, 18, 39, 78, 113, 136, 112, 72, 36, 24, 11];
 
 // Perennial Kc categories with a year-round canopy → flat Kc. Everything else is
 // treated as winter-dormant/deciduous. (aquatic_wetbed crops are excluded upstream.)
@@ -6979,6 +7101,7 @@ function serializeState(){
     fertility: s.fertility,
     confidence: s.confidence,
     climateZone: s.climateZone,
+    town: s.town, lat: s.lat, lon: s.lon,
     soilTexture: s.soilTexture,
     annualRainfall: s.annualRainfall,
     annualHa: s.annualHa,
@@ -7013,6 +7136,9 @@ function deserializeState(str){
       fertility:       obj.fertility        || state.fertility,
       confidence:      obj.confidence       ?? state.confidence,
       climateZone:     obj.climateZone      || state.climateZone,
+      town:            obj.town             ?? state.town,
+      lat:             obj.lat              ?? state.lat,
+      lon:             obj.lon              ?? state.lon,
       soilTexture:     obj.soilTexture      || state.soilTexture,
       annualRainfall:  obj.annualRainfall   ?? state.annualRainfall,
       annualHa:        obj.annualHa         ?? state.annualHa,
