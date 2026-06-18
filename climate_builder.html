@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Climate table builder — Family Farm Planner</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #2a2a2a; line-height: 1.5; }
+  h1 { font-size: 20px; }
+  .note { background: #f3f1ea; border-left: 4px solid #6b8f3e; padding: 10px 12px; font-size: 13px; margin: 14px 0; }
+  label { display: block; font-weight: 600; font-size: 13px; margin: 14px 0 4px; }
+  input[type=email] { width: 100%; padding: 8px; font-size: 14px; box-sizing: border-box; }
+  button { margin-top: 14px; padding: 9px 16px; font-size: 14px; background: #4a7c2f; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+  button:disabled { background: #aaa; cursor: default; }
+  #bar { height: 14px; background: #e3e0d6; border-radius: 7px; overflow: hidden; margin-top: 14px; display: none; }
+  #bar > div { height: 100%; width: 0; background: #4a7c2f; transition: width 0.2s; }
+  #status { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  #fails { font-size: 12px; color: #9A3A2A; margin-top: 8px; white-space: pre-wrap; }
+  textarea { width: 100%; height: 280px; font-family: ui-monospace, monospace; font-size: 11px; margin-top: 10px; box-sizing: border-box; display: none; }
+  code { background: #f3f1ea; padding: 1px 4px; }
+</style>
+</head>
+<body>
+<h1>Climate table builder</h1>
+<p style="font-size:14px">One-time tool. It fetches each town's monthly climate normal (FAO-56 reference ETo + rainfall) from SILO, then prints a <code>CLIMATE_DB</code> block to paste back for inlining into the planner. After that the planner needs no live fetch.</p>
+
+<div class="note">
+  Must be opened from an <strong>https</strong> address (e.g. your GitHub Pages URL) — SILO blocks cross-origin requests from a local <code>file://</code> page.
+  It pulls a 20-year daily series (2005–2024) per town, so the full run downloads ~30&nbsp;MB across ~79 sequential requests and takes a few minutes. Leave the tab open.
+</div>
+
+<label for="email">Email address (SILO requires one; not stored anywhere)</label>
+<input type="email" id="email" placeholder="you@example.com" autocomplete="off">
+
+<button id="go" onclick="run()">Build climate table</button>
+
+<div id="bar"><div></div></div>
+<div id="status"></div>
+<div id="fails"></div>
+<textarea id="out" readonly onclick="this.select()"></textarea>
+
+<script>
+const START = "20050101", FINISH = "20241231";   // 20-year normal; shorten here to run faster
+
+const TOWNS = [
+  {n:"Darlington (Perth Hills)",lat:-31.90,lon:116.10},
+  {n:"Perth",lat:-31.95,lon:115.86},
+  {n:"Mandurah",lat:-32.53,lon:115.72},
+  {n:"Bunbury",lat:-33.33,lon:115.64},
+  {n:"Busselton",lat:-33.65,lon:115.35},
+  {n:"Margaret River",lat:-33.95,lon:115.07},
+  {n:"Augusta",lat:-34.31,lon:115.16},
+  {n:"Manjimup",lat:-34.24,lon:116.15},
+  {n:"Pemberton",lat:-34.45,lon:116.04},
+  {n:"Collie",lat:-33.36,lon:116.16},
+  {n:"Albany",lat:-35.02,lon:117.88},
+  {n:"Denmark",lat:-34.96,lon:117.35},
+  {n:"Mount Barker",lat:-34.63,lon:117.66},
+  {n:"Katanning",lat:-33.69,lon:117.56},
+  {n:"Narrogin",lat:-32.94,lon:117.18},
+  {n:"Northam",lat:-31.65,lon:116.67},
+  {n:"York",lat:-31.89,lon:116.77},
+  {n:"Moora",lat:-30.64,lon:116.00},
+  {n:"Merredin",lat:-31.48,lon:118.28},
+  {n:"Dalwallinu",lat:-30.28,lon:116.66},
+  {n:"Geraldton",lat:-28.77,lon:114.61},
+  {n:"Kalgoorlie",lat:-30.75,lon:121.47},
+  {n:"Esperance",lat:-33.86,lon:121.89},
+  {n:"Carnarvon",lat:-24.88,lon:113.66},
+  {n:"Exmouth",lat:-21.93,lon:114.13},
+  {n:"Karratha",lat:-20.74,lon:116.85},
+  {n:"Port Hedland",lat:-20.31,lon:118.61},
+  {n:"Newman",lat:-23.36,lon:119.73},
+  {n:"Broome",lat:-17.96,lon:122.24},
+  {n:"Kununurra",lat:-15.78,lon:128.74},
+  {n:"Adelaide",lat:-34.93,lon:138.60},
+  {n:"Mount Gambier",lat:-37.83,lon:140.78},
+  {n:"Port Lincoln",lat:-34.73,lon:135.86},
+  {n:"Renmark",lat:-34.17,lon:140.75},
+  {n:"Whyalla",lat:-33.04,lon:137.56},
+  {n:"Port Augusta",lat:-32.49,lon:137.77},
+  {n:"Darwin",lat:-12.46,lon:130.84},
+  {n:"Katherine",lat:-14.47,lon:132.26},
+  {n:"Tennant Creek",lat:-19.65,lon:134.19},
+  {n:"Alice Springs",lat:-23.70,lon:133.88},
+  {n:"Brisbane",lat:-27.47,lon:153.03},
+  {n:"Gold Coast",lat:-28.00,lon:153.43},
+  {n:"Sunshine Coast",lat:-26.65,lon:153.09},
+  {n:"Toowoomba",lat:-27.56,lon:151.95},
+  {n:"Bundaberg",lat:-24.87,lon:152.35},
+  {n:"Rockhampton",lat:-23.38,lon:150.51},
+  {n:"Roma",lat:-26.57,lon:148.79},
+  {n:"Emerald",lat:-23.53,lon:148.16},
+  {n:"Charleville",lat:-26.40,lon:146.24},
+  {n:"Mount Isa",lat:-20.72,lon:139.49},
+  {n:"Mackay",lat:-21.14,lon:149.19},
+  {n:"Townsville",lat:-19.26,lon:146.82},
+  {n:"Cairns",lat:-16.92,lon:145.77},
+  {n:"Innisfail",lat:-17.52,lon:146.03},
+  {n:"Sydney",lat:-33.87,lon:151.21},
+  {n:"Newcastle",lat:-32.93,lon:151.78},
+  {n:"Wollongong",lat:-34.42,lon:150.89},
+  {n:"Coffs Harbour",lat:-30.30,lon:153.12},
+  {n:"Lismore",lat:-28.81,lon:153.28},
+  {n:"Tamworth",lat:-31.09,lon:150.93},
+  {n:"Dubbo",lat:-32.25,lon:148.60},
+  {n:"Wagga Wagga",lat:-35.11,lon:147.37},
+  {n:"Albury",lat:-36.08,lon:146.92},
+  {n:"Orange",lat:-33.28,lon:149.10},
+  {n:"Griffith",lat:-34.29,lon:146.05},
+  {n:"Broken Hill",lat:-31.96,lon:141.47},
+  {n:"Canberra",lat:-35.28,lon:149.13},
+  {n:"Melbourne",lat:-37.81,lon:144.96},
+  {n:"Geelong",lat:-38.15,lon:144.36},
+  {n:"Ballarat",lat:-37.56,lon:143.85},
+  {n:"Bendigo",lat:-36.76,lon:144.28},
+  {n:"Shepparton",lat:-36.38,lon:145.40},
+  {n:"Mildura",lat:-34.21,lon:142.15},
+  {n:"Warrnambool",lat:-38.38,lon:142.48},
+  {n:"Traralgon",lat:-38.20,lon:146.54},
+  {n:"Hobart",lat:-42.88,lon:147.33},
+  {n:"Launceston",lat:-41.43,lon:147.14},
+  {n:"Devonport",lat:-41.18,lon:146.35},
+  {n:"Burnie",lat:-41.05,lon:145.91}
+];
+
+// Identical aggregation to the planner's: daily SILO CSV → 12 monthly normals (mean monthly totals, mm).
+function aggregateSiloCsv(text){
+  const sumR = {}, sumE = {}, yrsByMon = {};
+  let days = 0;
+  for(const ln of String(text).split(/\r?\n/)){
+    const c = ln.split(",");
+    if(c.length < 6) continue;
+    const m = (c[2] || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(!m) continue;
+    const rain = parseFloat(c[3]), eto = parseFloat(c[5]);
+    if(isNaN(rain) || isNaN(eto)) continue;
+    const y = +m[1], mo = +m[2], key = y * 100 + mo;
+    sumR[key] = (sumR[key] || 0) + rain;
+    sumE[key] = (sumE[key] || 0) + eto;
+    (yrsByMon[mo] = yrsByMon[mo] || new Set()).add(y);
+    days++;
+  }
+  if(!days) return null;
+  const eto = [], rain = [];
+  for(let mo = 1; mo <= 12; mo++){
+    const ys = [...(yrsByMon[mo] || [])];
+    if(!ys.length) return null;
+    let se = 0, sr = 0;
+    ys.forEach(y => { se += sumE[y*100+mo] || 0; sr += sumR[y*100+mo] || 0; });
+    eto.push(Math.round(se / ys.length));
+    rain.push(Math.round(sr / ys.length));
+  }
+  return { eto, rain, days };
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function run(){
+  const email = document.getElementById("email").value.trim();
+  if(!/.+@.+\..+/.test(email)){ alert("Enter a valid email address — SILO requires one."); return; }
+  const goBtn = document.getElementById("go");
+  const bar = document.getElementById("bar"), fill = bar.firstElementChild;
+  const status = document.getElementById("status"), out = document.getElementById("out"), fails = document.getElementById("fails");
+  goBtn.disabled = true; bar.style.display = "block"; out.style.display = "none"; fails.textContent = "";
+  const results = {}, failed = [];
+  for(let i = 0; i < TOWNS.length; i++){
+    const t = TOWNS[i];
+    status.textContent = `Fetching ${i+1} / ${TOWNS.length}: ${t.n}…`;
+    fill.style.width = (i / TOWNS.length * 100).toFixed(1) + "%";
+    const lat = (Math.round(t.lat/0.05)*0.05).toFixed(2), lon = (Math.round(t.lon/0.05)*0.05).toFixed(2);
+    const url = "https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php"
+      + "?format=csv&comment=RF&lat=" + lat + "&lon=" + lon
+      + "&start=" + START + "&finish=" + FINISH
+      + "&username=" + encodeURIComponent(email) + "&password=apirequest";
+    let ok = false;
+    for(let attempt = 0; attempt < 2 && !ok; attempt++){
+      try {
+        const resp = await fetch(url);
+        if(!resp.ok) throw new Error("HTTP " + resp.status);
+        const text = await resp.text();
+        const agg = aggregateSiloCsv(text);
+        if(!agg || agg.days < 300) throw new Error("no data (" + (agg ? agg.days : 0) + " days)");
+        results[t.n] = agg;
+        ok = true;
+      } catch(e){
+        if(attempt === 1) failed.push(t.n + " — " + e.message);
+        else await sleep(1000);
+      }
+    }
+    await sleep(350);   // courtesy gap between SILO requests
+  }
+  fill.style.width = "100%";
+  status.textContent = `Done. ${Object.keys(results).length} of ${TOWNS.length} fetched` + (failed.length ? `, ${failed.length} failed.` : ".");
+  if(failed.length) fails.textContent = "Failed (re-run to retry):\n" + failed.join("\n");
+
+  // Emit the CLIMATE_DB block, keyed by town name (matches the planner's town list).
+  const lines = TOWNS.filter(t => results[t.n]).map(t => {
+    const d = results[t.n];
+    return `  ${JSON.stringify(t.n)}: { eto: [${d.eto.join(",")}], rain: [${d.rain.join(",")}] }`;
+  });
+  out.value = "const CLIMATE_DB = {\n" + lines.join(",\n") + "\n};";
+  out.style.display = "block";
+  goBtn.disabled = false;
+}
+</script>
+</body>
+</html>
