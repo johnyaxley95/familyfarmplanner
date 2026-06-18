@@ -1352,6 +1352,7 @@ const ZONES = [
 // Both zone and rainfall stay editable after selection — the town just pins lat/lon.
 const TOWNS = [
   // Western Australia
+  {n:"Darlington (Perth Hills)",st:"WA",lat:-31.90,lon:116.10,z:"Cs",r:1100},
   {n:"Perth",st:"WA",lat:-31.95,lon:115.86,z:"Cs",r:730},
   {n:"Mandurah",st:"WA",lat:-32.53,lon:115.72,z:"Cs",r:780},
   {n:"Bunbury",st:"WA",lat:-33.33,lon:115.64,z:"Cs",r:800},
@@ -1969,10 +1970,14 @@ let state={
   hoursPerWeek:20,
   labourSystem:"hand",
   climateZone:"Cs",         // Köppen CLIZ code (one of 12)
-  town:"Perth",             // nearest township — pins lat/lon for climate data, pre-fills zone + rainfall
-  lat:-31.95, lon:115.86,   // coordinates for SILO DataDrill climate lookup
+  town:"Darlington (Perth Hills)", // default trial site; pins lat/lon, pre-fills zone + rainfall
+  lat:-31.90, lon:116.10,   // coordinates for SILO DataDrill climate lookup
+  siloEmail:"",             // email for live SILO fetch (blank = fetch disabled, bundled climate used)
+  climateEto:null,          // 12 monthly ETo (mm) from a live SILO fetch; null → bundled PERTH_ETO
+  climateRain:null,         // 12 monthly rainfall (mm) from a live SILO fetch; null → bundled PERTH_RAIN
+  climateLabel:"",          // label of the active live climate source
   soilTexture:"heavy",      // TEXTR code: light/medium/heavy/organic/wide
-  annualRainfall:750,        // mm/yr
+  annualRainfall:1100,       // mm/yr (Darlington Hills default)
   fertility:"medium",
   annualHa:0.05,
   perennialHa:0.2,
@@ -4749,6 +4754,15 @@ function renderStep2(){
         </div>` : `<div style="font-size:11px;color:var(--text-mid);margin-top:3px">Pins ${state.lat}, ${state.lon} for climate data · sets the zone &amp; rainfall below (both editable)</div>`}
       </div>
       <div style="margin-bottom:12px">
+        <label>Climate data (SILO live fetch)</label>
+        <div style="font-size:11px;color:var(--text-mid);margin-bottom:4px">${state.climateEto ? `Live: ${state.climateLabel}` : "Using the bundled Perth 2005\u20132024 normal. Enter an email and fetch to load this location\u2019s real monthly climate from SILO."}</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="email" placeholder="email for SILO" value="${state.siloEmail||''}" oninput="state.siloEmail=this.value" style="flex:1"/>
+          <button class="btn" onclick="siloFetchClimate()" style="white-space:nowrap">Fetch climate</button>
+        </div>
+        ${state.climateStatus ? `<div style="font-size:11px;margin-top:4px;color:${state.climateStatus.type==='err'?'#9A3A2A':state.climateStatus.type==='ok'?'var(--green)':'var(--text-mid)'}">${state.climateStatus.msg}</div>` : ""}
+      </div>
+      <div style="margin-bottom:12px">
         <label>Climate zone (Köppen)</label>
         <select onchange="state.climateZone=this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100%">${zoneOpts}</select>
         ${activeZone?`<div style="font-size:11px;color:var(--text-mid);margin-top:3px">${activeZone.sub}</div>`:""}
@@ -6264,6 +6278,73 @@ function renderStep5(){
 const PERTH_ETO  = [208, 172, 151, 100, 71, 52, 53, 69, 93, 133, 167, 202];
 const PERTH_RAIN = [14, 17, 18, 39, 78, 113, 136, 112, 72, 36, 24, 11];
 
+// Aggregate a SILO DataDrill CSV (cols: lat,lon,YYYY-MM-DD,daily_rain,src,et_short_crop,src,meta)
+// into 12 monthly normals = mean monthly total ETo & rainfall (mm), averaged across the years present.
+function aggregateSiloCsv(text){
+  const sumR = {}, sumE = {}, yrsByMon = {};
+  let days = 0;
+  for(const ln of String(text).split(/\r?\n/)){
+    const c = ln.split(",");
+    if(c.length < 6) continue;
+    const m = (c[2] || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);   // matches data rows; skips header + metadata
+    if(!m) continue;
+    const rain = parseFloat(c[3]), eto = parseFloat(c[5]);
+    if(isNaN(rain) || isNaN(eto)) continue;
+    const y = +m[1], mo = +m[2], key = y * 100 + mo;
+    sumR[key] = (sumR[key] || 0) + rain;
+    sumE[key] = (sumE[key] || 0) + eto;
+    (yrsByMon[mo] = yrsByMon[mo] || new Set()).add(y);
+    days++;
+  }
+  if(!days) return null;
+  const eto = [], rain = [], allYears = new Set();
+  for(let mo = 1; mo <= 12; mo++){
+    const ys = [...(yrsByMon[mo] || [])];
+    ys.forEach(y => allYears.add(y));
+    let se = 0, sr = 0;
+    ys.forEach(y => { se += sumE[y*100+mo] || 0; sr += sumR[y*100+mo] || 0; });
+    eto.push(ys.length ? +(se / ys.length).toFixed(1) : PERTH_ETO[mo-1]);
+    rain.push(ys.length ? +(sr / ys.length).toFixed(1) : PERTH_RAIN[mo-1]);
+  }
+  const ay = [...allYears].sort();
+  return { eto, rain, days, years: ay.length ? (ay[0] + "\u2013" + ay[ay.length-1]) : "" };
+}
+
+// Live SILO DataDrill fetch for the current location → 12 monthly normals into state.
+async function siloFetchClimate(){
+  if(!state.siloEmail || !/.+@.+\..+/.test(state.siloEmail)){
+    state.climateStatus = { type:"err", msg:"Enter a valid email address (SILO requires one) before fetching." };
+    renderApp(); return;
+  }
+  if(state.lat == null || state.lon == null){
+    state.climateStatus = { type:"err", msg:"Pick a location first." };
+    renderApp(); return;
+  }
+  const lat = (Math.round(state.lat / 0.05) * 0.05).toFixed(2);
+  const lon = (Math.round(state.lon / 0.05) * 0.05).toFixed(2);
+  state.climateStatus = { type:"load", msg:"Fetching climate from SILO\u2026 (20-year daily series; may take a few seconds)" };
+  renderApp();
+  const url = "https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php"
+    + "?format=csv&comment=RF&lat=" + lat + "&lon=" + lon
+    + "&start=20050101&finish=20241231&username=" + encodeURIComponent(state.siloEmail) + "&password=apirequest";
+  try {
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error("HTTP " + resp.status);
+    const text = await resp.text();
+    const agg = aggregateSiloCsv(text);
+    if(!agg || agg.days < 300) throw new Error("unexpected response (no daily data)");
+    state.climateEto = agg.eto;
+    state.climateRain = agg.rain;
+    state.climateLabel = "SILO " + lat + ", " + lon + " \u00b7 " + agg.years + " normal";
+    state.climateStatus = { type:"ok", msg:"Loaded " + agg.years + ": ETo " + Math.round(agg.eto.reduce((a,b)=>a+b,0)) + " mm/yr, rainfall " + Math.round(agg.rain.reduce((a,b)=>a+b,0)) + " mm/yr." };
+    state.plan = null;
+    renderApp();
+  } catch(e){
+    state.climateStatus = { type:"err", msg:"Couldn\u2019t fetch from SILO (" + e.message + "). Still using the bundled climate \u2014 check the email and connection, or try again." };
+    renderApp();
+  }
+}
+
 // Perennial Kc categories with a year-round canopy → flat Kc. Everything else is
 // treated as winter-dormant/deciduous. (aquatic_wetbed crops are excluded upstream.)
 const EVERGREEN_CATS = new Set(["citrus", "tropical_evergreen", "evergreen_sclerophyll",
@@ -6316,7 +6397,7 @@ function monthlyKc(crop){
 // Litres of irrigation per month (Jan..Dec) for one crop over areaHa.
 // irrigation = max(0, ETc − rain); effective rain = min(rain, ETc). 1mm·ha = 10,000 L.
 function cropMonthlyIrrigation(crop, areaHa, eto, rain){
-  eto = eto || PERTH_ETO; rain = rain || PERTH_RAIN;
+  eto = eto || (typeof state !== "undefined" && state.climateEto) || PERTH_ETO; rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
   const kcA = monthlyKc(crop);
   const out = new Array(12);
   for(let m = 0; m < 12; m++){
@@ -6329,7 +6410,7 @@ function cropMonthlyIrrigation(crop, areaHa, eto, rain){
 // Property monthly irrigation curve + per-crop annual totals.
 // Includes land perennials + all annuals; excludes aquatic/"both" (pond-grown) and Kc-less crops.
 function propertyIrrigationCurve(plan, eto, rain){
-  eto = eto || PERTH_ETO; rain = rain || PERTH_RAIN;
+  eto = eto || (typeof state !== "undefined" && state.climateEto) || PERTH_ETO; rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
   const monthly = new Array(12).fill(0);
   const perCrop = [];
   (plan.selected || []).forEach(({crop, allocHa}) => {
@@ -7102,6 +7183,7 @@ function serializeState(){
     confidence: s.confidence,
     climateZone: s.climateZone,
     town: s.town, lat: s.lat, lon: s.lon,
+    climateEto: s.climateEto, climateRain: s.climateRain, climateLabel: s.climateLabel,
     soilTexture: s.soilTexture,
     annualRainfall: s.annualRainfall,
     annualHa: s.annualHa,
@@ -7139,6 +7221,9 @@ function deserializeState(str){
       town:            obj.town             ?? state.town,
       lat:             obj.lat              ?? state.lat,
       lon:             obj.lon              ?? state.lon,
+      climateEto:      obj.climateEto       ?? state.climateEto,
+      climateRain:     obj.climateRain      ?? state.climateRain,
+      climateLabel:    obj.climateLabel     ?? state.climateLabel,
       soilTexture:     obj.soilTexture      || state.soilTexture,
       annualRainfall:  obj.annualRainfall   ?? state.annualRainfall,
       annualHa:        obj.annualHa         ?? state.annualHa,
