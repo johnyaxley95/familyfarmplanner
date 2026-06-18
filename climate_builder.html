@@ -22,11 +22,11 @@
 </head>
 <body>
 <h1>Climate table builder</h1>
-<p style="font-size:14px">One-time tool. It fetches each town's monthly climate normal (FAO-56 reference ETo + rainfall) from SILO, then prints a <code>CLIMATE_DB</code> block to paste back for inlining into the planner. After that the planner needs no live fetch.</p>
+<p style="font-size:14px">One-time tool. It fetches each town's monthly climate normal — FAO-56 reference ETo, rainfall, and temperatures (mean max/min plus the typical coldest night, for frost) — from SILO, then prints a <code>CLIMATE_DB</code> block to paste back for inlining into the planner. After that the planner needs no live fetch.</p>
 
 <div class="note">
   Must be opened from an <strong>https</strong> address (e.g. your GitHub Pages URL) — SILO blocks cross-origin requests from a local <code>file://</code> page.
-  It pulls a 20-year daily series (2005–2024) per town, so the full run downloads ~30&nbsp;MB across ~79 sequential requests and takes a few minutes. Leave the tab open.
+  It pulls a 20-year daily series (2005–2024) of rain, ETo and temperatures per town, so the full run downloads ~50&nbsp;MB across ~79 sequential requests and takes several minutes. Leave the tab open.
 </div>
 
 <label for="email">Email address (SILO requires one; not stored anywhere)</label>
@@ -124,34 +124,64 @@ const TOWNS = [
   {n:"Burnie",lat:-41.05,lon:145.91}
 ];
 
-// Identical aggregation to the planner's: daily SILO CSV → 12 monthly normals (mean monthly totals, mm).
+// Identical aggregation to the planner's: daily SILO CSV → monthly normals.
+// Header-based column lookup (robust to the RFXN column order). Per month:
+//   eto/rain   = mean monthly total (mm)
+//   tmax/tmin  = mean daily max/min (°C) — typical conditions for growth/optimal checks
+//   tminext    = mean of each year's coldest night that month (°C) — the frost metric vs ktmp
 function aggregateSiloCsv(text){
-  const sumR = {}, sumE = {}, yrsByMon = {};
+  const lines = String(text).split(/\r?\n/).filter(l => l.indexOf(",") >= 0);
+  const hi = lines.findIndex(l => /daily_rain|et_short_crop|max_temp|min_temp/i.test(l));
+  if(hi < 0) return null;
+  const hdr = lines[hi].split(",").map(s => s.trim().toLowerCase());
+  const cRain = hdr.indexOf("daily_rain"), cEto = hdr.indexOf("et_short_crop"),
+        cTx = hdr.indexOf("max_temp"), cTn = hdr.indexOf("min_temp");
+  if(cRain < 0 || cEto < 0) return null;
+  let cDate = hdr.indexOf("yyyy-mm-dd");
+  const rows = lines.slice(hi + 1);
+  if(cDate < 0){
+    const f = (rows[0] || "").split(",");
+    cDate = f.findIndex(v => /^\s*\d{4}-\d{2}-\d{2}\s*$/.test(v));
+    if(cDate < 0) cDate = 2;
+  }
+  const ym = {};   // (year*100+month) → sums + that month's coldest night
   let days = 0;
-  for(const ln of String(text).split(/\r?\n/)){
+  for(const ln of rows){
     const c = ln.split(",");
-    if(c.length < 6) continue;
-    const m = (c[2] || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const m = (c[cDate] || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if(!m) continue;
-    const rain = parseFloat(c[3]), eto = parseFloat(c[5]);
+    const rain = parseFloat(c[cRain]), eto = parseFloat(c[cEto]);
     if(isNaN(rain) || isNaN(eto)) continue;
+    const tx = cTx >= 0 ? parseFloat(c[cTx]) : NaN;
+    const tn = cTn >= 0 ? parseFloat(c[cTn]) : NaN;
     const y = +m[1], mo = +m[2], key = y * 100 + mo;
-    sumR[key] = (sumR[key] || 0) + rain;
-    sumE[key] = (sumE[key] || 0) + eto;
-    (yrsByMon[mo] = yrsByMon[mo] || new Set()).add(y);
+    const a = ym[key] || (ym[key] = { rain:0, eto:0, txS:0, txN:0, tnS:0, tnN:0, tnMin:Infinity });
+    a.rain += rain; a.eto += eto;
+    if(!isNaN(tx)){ a.txS += tx; a.txN++; }
+    if(!isNaN(tn)){ a.tnS += tn; a.tnN++; if(tn < a.tnMin) a.tnMin = tn; }
     days++;
   }
-  if(!days) return null;
-  const eto = [], rain = [];
+  if(days < 300) return null;
+  const yearsBy = {};
+  Object.keys(ym).forEach(k => { const mo = +k % 100, y = Math.floor(+k / 100); (yearsBy[mo] = yearsBy[mo] || []).push(y); });
+  const eto = [], rain = [], tmax = [], tmin = [], tminext = [];
   for(let mo = 1; mo <= 12; mo++){
-    const ys = [...(yrsByMon[mo] || [])];
+    const ys = yearsBy[mo] || [];
     if(!ys.length) return null;
-    let se = 0, sr = 0;
-    ys.forEach(y => { se += sumE[y*100+mo] || 0; sr += sumR[y*100+mo] || 0; });
+    let se = 0, sr = 0, stx = 0, ntx = 0, stn = 0, ntn = 0, extS = 0, extN = 0;
+    ys.forEach(y => {
+      const a = ym[y*100+mo];
+      se += a.eto; sr += a.rain;
+      stx += a.txS; ntx += a.txN; stn += a.tnS; ntn += a.tnN;
+      if(a.tnMin < Infinity){ extS += a.tnMin; extN++; }
+    });
     eto.push(Math.round(se / ys.length));
     rain.push(Math.round(sr / ys.length));
+    tmax.push(ntx ? +(stx / ntx).toFixed(1) : null);
+    tmin.push(ntn ? +(stn / ntn).toFixed(1) : null);
+    tminext.push(extN ? +(extS / extN).toFixed(1) : null);
   }
-  return { eto, rain, days };
+  return { eto, rain, tmax, tmin, tminext, days };
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -170,7 +200,7 @@ async function run(){
     fill.style.width = (i / TOWNS.length * 100).toFixed(1) + "%";
     const lat = (Math.round(t.lat/0.05)*0.05).toFixed(2), lon = (Math.round(t.lon/0.05)*0.05).toFixed(2);
     const url = "https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php"
-      + "?format=csv&comment=RF&lat=" + lat + "&lon=" + lon
+      + "?format=csv&comment=RFXN&lat=" + lat + "&lon=" + lon
       + "&start=" + START + "&finish=" + FINISH
       + "&username=" + encodeURIComponent(email) + "&password=apirequest";
     let ok = false;
@@ -195,9 +225,10 @@ async function run(){
   if(failed.length) fails.textContent = "Failed (re-run to retry):\n" + failed.join("\n");
 
   // Emit the CLIMATE_DB block, keyed by town name (matches the planner's town list).
+  const arr = a => "[" + a.map(v => v === null ? "null" : v).join(",") + "]";
   const lines = TOWNS.filter(t => results[t.n]).map(t => {
     const d = results[t.n];
-    return `  ${JSON.stringify(t.n)}: { eto: [${d.eto.join(",")}], rain: [${d.rain.join(",")}] }`;
+    return `  ${JSON.stringify(t.n)}: { eto: ${arr(d.eto)}, rain: ${arr(d.rain)}, tmax: ${arr(d.tmax)}, tmin: ${arr(d.tmin)}, tminext: ${arr(d.tminext)} }`;
   });
   out.value = "const CLIMATE_DB = {\n" + lines.join(",\n") + "\n};";
   out.style.display = "block";
