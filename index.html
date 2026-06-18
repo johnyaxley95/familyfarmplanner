@@ -1347,6 +1347,110 @@ const ZONES = [
   {id:"E",  code:"E",  label:"Boreal / subarctic",        sub:"Long cold winters, short summers"},
 ]
 
+// Township → coordinates (SILO DataDrill) + a pre-filled Köppen zone & annual rainfall.
+// Zones use the app's simplified 12-code scheme; rainfall is an approximate annual mean.
+// Both zone and rainfall stay editable after selection — the town just pins lat/lon.
+const TOWNS = [
+  // Western Australia
+  {n:"Darlington (Perth Hills)",st:"WA",lat:-31.90,lon:116.10,z:"Cs",r:1100},
+  {n:"Perth",st:"WA",lat:-31.95,lon:115.86,z:"Cs",r:730},
+  {n:"Mandurah",st:"WA",lat:-32.53,lon:115.72,z:"Cs",r:780},
+  {n:"Bunbury",st:"WA",lat:-33.33,lon:115.64,z:"Cs",r:800},
+  {n:"Busselton",st:"WA",lat:-33.65,lon:115.35,z:"Cs",r:820},
+  {n:"Margaret River",st:"WA",lat:-33.95,lon:115.07,z:"Cs",r:1100},
+  {n:"Augusta",st:"WA",lat:-34.31,lon:115.16,z:"Cs",r:1000},
+  {n:"Manjimup",st:"WA",lat:-34.24,lon:116.15,z:"Cs",r:1000},
+  {n:"Pemberton",st:"WA",lat:-34.45,lon:116.04,z:"Cs",r:1200},
+  {n:"Collie",st:"WA",lat:-33.36,lon:116.16,z:"Cs",r:900},
+  {n:"Albany",st:"WA",lat:-35.02,lon:117.88,z:"Cs",r:930},
+  {n:"Denmark",st:"WA",lat:-34.96,lon:117.35,z:"Cs",r:1100},
+  {n:"Mount Barker",st:"WA",lat:-34.63,lon:117.66,z:"Cs",r:720},
+  {n:"Katanning",st:"WA",lat:-33.69,lon:117.56,z:"Cs",r:480},
+  {n:"Narrogin",st:"WA",lat:-32.94,lon:117.18,z:"Cs",r:500},
+  {n:"Northam",st:"WA",lat:-31.65,lon:116.67,z:"Cs",r:440},
+  {n:"York",st:"WA",lat:-31.89,lon:116.77,z:"Cs",r:440},
+  {n:"Moora",st:"WA",lat:-30.64,lon:116.00,z:"Cs",r:460},
+  {n:"Merredin",st:"WA",lat:-31.48,lon:118.28,z:"Bs",r:320},
+  {n:"Dalwallinu",st:"WA",lat:-30.28,lon:116.66,z:"Bs",r:360},
+  {n:"Geraldton",st:"WA",lat:-28.77,lon:114.61,z:"Bs",r:450},
+  {n:"Kalgoorlie",st:"WA",lat:-30.75,lon:121.47,z:"Bs",r:270},
+  {n:"Esperance",st:"WA",lat:-33.86,lon:121.89,z:"Cs",r:620},
+  {n:"Carnarvon",st:"WA",lat:-24.88,lon:113.66,z:"Bw",r:230},
+  {n:"Exmouth",st:"WA",lat:-21.93,lon:114.13,z:"Bw",r:270},
+  {n:"Karratha",st:"WA",lat:-20.74,lon:116.85,z:"Bw",r:300},
+  {n:"Port Hedland",st:"WA",lat:-20.31,lon:118.61,z:"Bw",r:320},
+  {n:"Newman",st:"WA",lat:-23.36,lon:119.73,z:"Bw",r:320},
+  {n:"Broome",st:"WA",lat:-17.96,lon:122.24,z:"Aw",r:600},
+  {n:"Kununurra",st:"WA",lat:-15.78,lon:128.74,z:"Aw",r:800},
+  // South Australia
+  {n:"Adelaide",st:"SA",lat:-34.93,lon:138.60,z:"Cs",r:540},
+  {n:"Mount Gambier",st:"SA",lat:-37.83,lon:140.78,z:"Cs",r:710},
+  {n:"Port Lincoln",st:"SA",lat:-34.73,lon:135.86,z:"Cs",r:480},
+  {n:"Renmark",st:"SA",lat:-34.17,lon:140.75,z:"Bs",r:260},
+  {n:"Whyalla",st:"SA",lat:-33.04,lon:137.56,z:"Bs",r:280},
+  {n:"Port Augusta",st:"SA",lat:-32.49,lon:137.77,z:"Bw",r:250},
+  // Northern Territory
+  {n:"Darwin",st:"NT",lat:-12.46,lon:130.84,z:"Aw",r:1730},
+  {n:"Katherine",st:"NT",lat:-14.47,lon:132.26,z:"Aw",r:970},
+  {n:"Tennant Creek",st:"NT",lat:-19.65,lon:134.19,z:"Bs",r:450},
+  {n:"Alice Springs",st:"NT",lat:-23.70,lon:133.88,z:"Bw",r:280},
+  // Queensland
+  {n:"Brisbane",st:"QLD",lat:-27.47,lon:153.03,z:"Cf",r:1010},
+  {n:"Gold Coast",st:"QLD",lat:-28.00,lon:153.43,z:"Cf",r:1400},
+  {n:"Sunshine Coast",st:"QLD",lat:-26.65,lon:153.09,z:"Cf",r:1700},
+  {n:"Toowoomba",st:"QLD",lat:-27.56,lon:151.95,z:"Cf",r:720},
+  {n:"Bundaberg",st:"QLD",lat:-24.87,lon:152.35,z:"Cf",r:1010},
+  {n:"Rockhampton",st:"QLD",lat:-23.38,lon:150.51,z:"Cf",r:800},
+  {n:"Roma",st:"QLD",lat:-26.57,lon:148.79,z:"Cf",r:580},
+  {n:"Emerald",st:"QLD",lat:-23.53,lon:148.16,z:"Bs",r:640},
+  {n:"Charleville",st:"QLD",lat:-26.40,lon:146.24,z:"Bs",r:500},
+  {n:"Mount Isa",st:"QLD",lat:-20.72,lon:139.49,z:"Bs",r:470},
+  {n:"Mackay",st:"QLD",lat:-21.14,lon:149.19,z:"Aw",r:1600},
+  {n:"Townsville",st:"QLD",lat:-19.26,lon:146.82,z:"Aw",r:1130},
+  {n:"Cairns",st:"QLD",lat:-16.92,lon:145.77,z:"Aw",r:2000},
+  {n:"Innisfail",st:"QLD",lat:-17.52,lon:146.03,z:"Ar",r:3500},
+  // New South Wales
+  {n:"Sydney",st:"NSW",lat:-33.87,lon:151.21,z:"Cf",r:1210},
+  {n:"Newcastle",st:"NSW",lat:-32.93,lon:151.78,z:"Cf",r:1100},
+  {n:"Wollongong",st:"NSW",lat:-34.42,lon:150.89,z:"Cf",r:1300},
+  {n:"Coffs Harbour",st:"NSW",lat:-30.30,lon:153.12,z:"Cf",r:1700},
+  {n:"Lismore",st:"NSW",lat:-28.81,lon:153.28,z:"Cf",r:1300},
+  {n:"Tamworth",st:"NSW",lat:-31.09,lon:150.93,z:"Cf",r:670},
+  {n:"Dubbo",st:"NSW",lat:-32.25,lon:148.60,z:"Cf",r:580},
+  {n:"Wagga Wagga",st:"NSW",lat:-35.11,lon:147.37,z:"Cf",r:570},
+  {n:"Albury",st:"NSW",lat:-36.08,lon:146.92,z:"Cf",r:700},
+  {n:"Orange",st:"NSW",lat:-33.28,lon:149.10,z:"Do",r:900},
+  {n:"Griffith",st:"NSW",lat:-34.29,lon:146.05,z:"Bs",r:400},
+  {n:"Broken Hill",st:"NSW",lat:-31.96,lon:141.47,z:"Bw",r:250},
+  // ACT
+  {n:"Canberra",st:"ACT",lat:-35.28,lon:149.13,z:"Cf",r:620},
+  // Victoria
+  {n:"Melbourne",st:"VIC",lat:-37.81,lon:144.96,z:"Do",r:650},
+  {n:"Geelong",st:"VIC",lat:-38.15,lon:144.36,z:"Do",r:540},
+  {n:"Ballarat",st:"VIC",lat:-37.56,lon:143.85,z:"Do",r:690},
+  {n:"Bendigo",st:"VIC",lat:-36.76,lon:144.28,z:"Do",r:550},
+  {n:"Shepparton",st:"VIC",lat:-36.38,lon:145.40,z:"Bs",r:480},
+  {n:"Mildura",st:"VIC",lat:-34.21,lon:142.15,z:"Bs",r:290},
+  {n:"Warrnambool",st:"VIC",lat:-38.38,lon:142.48,z:"Do",r:740},
+  {n:"Traralgon",st:"VIC",lat:-38.20,lon:146.54,z:"Do",r:750},
+  // Tasmania
+  {n:"Hobart",st:"TAS",lat:-42.88,lon:147.33,z:"Do",r:620},
+  {n:"Launceston",st:"TAS",lat:-41.43,lon:147.14,z:"Do",r:670},
+  {n:"Devonport",st:"TAS",lat:-41.18,lon:146.35,z:"Do",r:980},
+  {n:"Burnie",st:"TAS",lat:-41.05,lon:145.91,z:"Do",r:1000},
+];
+
+// Selecting a town pins coordinates and pre-fills zone + rainfall (still editable).
+function selectTown(name){
+  if(name === "Other"){ state.town = "Other"; }
+  else {
+    const t = TOWNS.find(x => x.n === name);
+    if(t){ state.town = t.n; state.lat = t.lat; state.lon = t.lon; state.climateZone = t.z; state.annualRainfall = t.r; }
+  }
+  state.checkedCrops = null; state.plan = null; renderApp();
+}
+
+
 const MONTHS=["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 const MONTH_INITIALS=["J","F","M","A","M","J","J","A","S","O","N","D"];
 const MONTH_NAMES=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -1866,8 +1970,14 @@ let state={
   hoursPerWeek:20,
   labourSystem:"hand",
   climateZone:"Cs",         // Köppen CLIZ code (one of 12)
+  town:"Darlington (Perth Hills)", // default trial site; pins lat/lon, pre-fills zone + rainfall
+  lat:-31.90, lon:116.10,   // coordinates for SILO DataDrill climate lookup
+  siloEmail:"",             // email for live SILO fetch (blank = fetch disabled, bundled climate used)
+  climateEto:null,          // 12 monthly ETo (mm) from a live SILO fetch; null → bundled PERTH_ETO
+  climateRain:null,         // 12 monthly rainfall (mm) from a live SILO fetch; null → bundled PERTH_RAIN
+  climateLabel:"",          // label of the active live climate source
   soilTexture:"heavy",      // TEXTR code: light/medium/heavy/organic/wide
-  annualRainfall:750,        // mm/yr
+  annualRainfall:1100,       // mm/yr (Darlington Hills default)
   fertility:"medium",
   annualHa:0.05,
   perennialHa:0.2,
@@ -1900,6 +2010,8 @@ let state={
   // livestock
   pastureHa: 0.05,          // grazing / foraging area for terrestrial livestock
   surfaceWaterHa: 0.0,       // pond / tank / flooded area — aquaculture + aquatic crops
+  irrigationDam: false,      // true = size a storage dam from irrigation demand (hides manual surfaceWaterHa)
+  damDepth: 3,               // m — average usable dam depth (storage volume → surface footprint)
   landFixed: false,          // true = respect annual/perennial split; false = fluid total pool
   hasIrrigation: false,      // true = rainfall min constraints are softened in suitability
   livestock: {},         // {name: count} — Adjust-tab overrides
@@ -2421,6 +2533,9 @@ function generatePlan(s){
 
   const eb = effectiveLandBudgets(s);
   let usedCoolHa=0, usedWarmHa=0, usedPerennialHa=0, usedLabour=0, usedSurfaceWaterHa=0;
+  // Option B: with the irrigation dam on, the dam is sized AFTER allocation to fit the
+  // aquatic crops the planner picks on merit, so surface area is not a binding budget here.
+  const swBudget = s.irrigationDam ? 1e7 : (s.surfaceWaterHa || 0);
   // Per-layer tracking — perennial layers stack on the same plot
   let usedCanopyHa = 0, usedTreesHa = 0, usedPerennialPlantsHa = 0;
   const usedAnnualHa = () => usedCoolHa + usedWarmHa; // total across both seasons
@@ -2459,7 +2574,7 @@ function generatePlan(s){
     if(count <= 0) return;
     lsCand.usedCount += count;
     usedLabour += (lsCand.ls.labour_hrs_per_animal||0) * count;
-    if(AQUATIC_LIVESTOCK.has(lsCand.ls.name)){
+    if(isAquaticLivestock(lsCand.ls)){
       usedSurfaceWaterHa += lsCand.ls.space_m2_per_animal * count / 10000;
     } else {
       usedPastureHa += lsCand.ls.space_m2_per_animal * count / 10000;
@@ -2481,7 +2596,7 @@ function generatePlan(s){
     return lph > 0 ? srvPerHa / lph : srvPerHa * 99;
   }
 
-  function addAllocation(crop, allocHa, key){
+  function addAllocation(crop, allocHa, key, pool){
     const lph = cropLabour(crop, isMech);
     const actualLabour = lph * allocHa;
     const adjY = subsistYield(crop, s.fertility, s.confidence);
@@ -2503,8 +2618,8 @@ function generatePlan(s){
       if(w > 0) monthCoverage[m][key] += inSeasonRate * w;
     });
     usedLabour += actualLabour;
-    // Land-pool tracking — aquatic crops draw from surface water, not crop beds
-    if(AQUATIC_CROPS.has(crop.name)){
+    // Land-pool tracking — caller passes pool ("surface" = water-grown allocation)
+    if(pool === "surface"){
       usedSurfaceWaterHa += allocHa;
     } else if(crop.perennial){
       usedPerennialHa += allocHa;
@@ -2548,6 +2663,19 @@ function generatePlan(s){
     } else {
       selected.push({crop, allocHa, serves: actualServes, labour: actualLabour, tier: cropPriorityTier(crop)});
     }
+  }
+
+  // Pick the space pool a crop draws from, given the LAND space available to it.
+  // pure aquatic -> surface water; "both" -> land if any, else spill to surface;
+  // land-only -> land. Returns {available, pool} (pool: "land" | "surface").
+  function cropPoolAvail(crop, landAvail){
+    const hab = cropHabitat(crop);
+    if(hab === "land") return {available: landAvail, pool: "land"};
+    const swAvail = swBudget - usedSurfaceWaterHa;
+    if(hab === "aquatic") return {available: swAvail, pool: "surface"};
+    // "both": default to land, spill into surface water only when land is full
+    return landAvail > 0.0005 ? {available: landAvail, pool: "land"}
+                              : {available: swAvail, pool: "surface"};
   }
 
   // ── PHASE 1: fill each food group to 100% sufficiency ────────────────────
@@ -2716,12 +2844,14 @@ function generatePlan(s){
       let bestLs = null, bestLsEff = -Infinity;
       if(!isFresh){
         const labL = labourCap - usedLabour;
-        const pasL = (s.pastureHa||0) - usedPastureHa;
-        const swL  = (s.surfaceWaterHa||0) - usedSurfaceWaterHa;
+        const pasL = (s.landFixed === false)
+          ? (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - perennialFootprint() - Math.max(usedCoolHa, usedWarmHa) - usedPastureHa
+          : (s.pastureHa||0) - usedPastureHa;
+        const swL  = swBudget - usedSurfaceWaterHa;
         for(const lc of lsFgCands){
           if(lsBlocked.has(lc.ls.name)) continue;
           if(lc.labourPerStep > labL + 0.1) continue;
-          const poolLeft = AQUATIC_LIVESTOCK.has(lc.ls.name) ? swL : pasL;
+          const poolLeft = isAquaticLivestock(lc.ls) ? swL : pasL;
           if(lc.spaceHaPerStep > poolLeft + 0.0001) continue;
           if(lsServesPerDay(lc.ls, lc.usedCount) >= targetServes * lsCapFrac) continue;
           // ADG red-meat ceiling: skip a red-meat species once the household's aggregate
@@ -2743,9 +2873,11 @@ function generatePlan(s){
 
       if(lsWins){
         const labL2 = labourCap - usedLabour;
-        const pasL2 = AQUATIC_LIVESTOCK.has(bestLs.ls.name)
-          ? (s.surfaceWaterHa||0) - usedSurfaceWaterHa
-          : (s.pastureHa||0) - usedPastureHa;
+        const pasL2 = isAquaticLivestock(bestLs.ls)
+          ? swBudget - usedSurfaceWaterHa
+          : (s.landFixed === false)
+            ? (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - perennialFootprint() - Math.max(usedCoolHa, usedWarmHa) - usedPastureHa
+            : (s.pastureHa||0) - usedPastureHa;
         const maxByLab = bestLs.labourPerStep > 0 ? Math.floor(labL2 / bestLs.labourPerStep) : 99;
         const maxByPas = bestLs.spaceHaPerStep > 0 ? Math.floor((pasL2+0.0001) / bestLs.spaceHaPerStep) : 99;
         const capServes = targetServes * lsCapFrac - lsServesPerDay(bestLs.ls, bestLs.usedCount);
@@ -2832,7 +2964,7 @@ function generatePlan(s){
         const season2p1 = isAnnual2 ? getCropSeason(best.crop) : null;
         let available;
         if(s.landFixed === false){
-          const totalL = (s.annualHa||0) + (s.perennialHa||0);
+          const totalL = (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - usedPastureHa;
           if(isAnnual2){
             // Annuals use the combined pool minus physical perennial footprint and their seasonal usage
             available = totalL - perennialFootprint() - (season2p1==="warm" ? usedWarmHa : usedCoolHa);
@@ -2850,6 +2982,9 @@ function generatePlan(s){
           const lu1  = lay1==="canopy" ? usedCanopyHa : lay1==="trees" ? usedTreesHa : usedPerennialPlantsHa;
           available  = (s.perennialHa||0) - lu1;
         }
+        const _pa1 = cropPoolAvail(best.crop, available);
+        available = _pa1.available;
+        const allocPool1 = _pa1.pool;
         if(available <= 0.0005) continue;
         let allocHa = Math.min(areaNeeded, available);
         const lph = cropLabour(best.crop, isMech);
@@ -2859,7 +2994,7 @@ function generatePlan(s){
         // and monthCoverage[] stay keyed by the real 13-group taxonomy (display intact).
         // The umbrella's summed target/coverage is what the loop above tracks.
         const creditKey = FG_KEY[effectiveFoodGroup(best.crop)] || key;
-        addAllocation(best.crop, allocHa, creditKey);
+        addAllocation(best.crop, allocHa, creditKey, allocPool1);
       } else { break; }
     }
   });
@@ -2950,11 +3085,9 @@ function generatePlan(s){
         const {cand: top, nutPerHaYr} = scored[0];
         const isAnn = !top.crop.perennial;
         const s15 = isAnn ? getCropSeason(top.crop) : null;
-        const spaceLeft = AQUATIC_CROPS.has(top.crop.name)
-          ? (s.surfaceWaterHa||0) - usedSurfaceWaterHa
-          : s.landFixed === false
+        const landAvail15 = s.landFixed === false
             ? (()=>{
-                const totalL15 = (s.annualHa||0) + (s.perennialHa||0);
+                const totalL15 = (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - usedPastureHa;
                 if(isAnn){
                   return totalL15 - perennialFootprint() - (s15==="warm" ? usedWarmHa : usedCoolHa);
                 } else {
@@ -2970,6 +3103,9 @@ function generatePlan(s){
                   const lu15  = lay15==="canopy" ? usedCanopyHa : lay15==="trees" ? usedTreesHa : usedPerennialPlantsHa;
                   return (s.perennialHa||0) - lu15;
                 })();
+        const _pa15 = cropPoolAvail(top.crop, landAvail15);
+        const spaceLeft = _pa15.available;
+        const allocPool15 = _pa15.pool;
         if(spaceLeft < 0.005){ p15Handled.add(gapKey); continue; }
 
         const lph15 = cropLabour(top.crop, isMech);
@@ -2984,7 +3120,7 @@ function generatePlan(s){
         if(ha15 < 0.002){ p15Handled.add(gapKey); continue; }
 
         const fgKey15 = FG_KEY[effectiveFoodGroup(top.crop)] || 'othervet';
-        addAllocation(top.crop, ha15, fgKey15);
+        addAllocation(top.crop, ha15, fgKey15, allocPool15);
         p15AllocNames.add(top.crop.name);
         p15Count++;
 
@@ -3021,7 +3157,7 @@ function generatePlan(s){
       // Re-compute all remaining budgets each iteration
       const pf2        = perennialFootprint();
       const maxBed2    = Math.max(usedCoolHa, usedWarmHa);
-      const totalL2    = (s.annualHa||0) + (s.perennialHa||0);
+      const totalL2    = (s.annualHa||0) + (s.perennialHa||0) + (s.pastureHa||0) - usedPastureHa;
       const coolLeft2     = s.landFixed === false ? totalL2 - pf2 - usedCoolHa     : eb.annualHa    - usedCoolHa;
       const warmLeft2     = s.landFixed === false ? totalL2 - pf2 - usedWarmHa     : eb.annualHa    - usedWarmHa;
       // Per-layer space remaining — each layer only competes with itself
@@ -3033,8 +3169,8 @@ function generatePlan(s){
       };
       const anyPerennialLeft = Object.values(layerSpace2).some(v => v > 0.001);
       const labourLeft    = labourCap      - usedLabour;
-      const pastureLeft   = (s.pastureHa||0) - usedPastureHa;
-      const swLeft2       = (s.surfaceWaterHa||0) - usedSurfaceWaterHa;
+      const pastureLeft   = s.landFixed === false ? totalL2 - pf2 - maxBed2 - usedPastureHa : (s.pastureHa||0) - usedPastureHa;
+      const swLeft2       = swBudget - usedSurfaceWaterHa;
 
       if(coolLeft2 < 0.001 && warmLeft2 < 0.001 && !anyPerennialLeft && labourLeft < 1 && pastureLeft < 0.001) break;
 
@@ -3044,13 +3180,16 @@ function generatePlan(s){
       for(const cand of yieldOrder){
         const isAnnual = !cand.crop.perennial;
         const season2 = isAnnual ? getCropSeason(cand.crop) : null;
-        let spaceLeft;
+        let landSpace2;
         if(isAnnual){
-          spaceLeft = season2==="cool" ? coolLeft2 : season2==="warm" ? warmLeft2 : Math.max(coolLeft2,warmLeft2);
+          landSpace2 = season2==="cool" ? coolLeft2 : season2==="warm" ? warmLeft2 : Math.max(coolLeft2,warmLeft2);
         } else {
           const layP2 = cropLayer(cand.crop);
-          spaceLeft = layerSpace2[layP2] || 0;
+          landSpace2 = layerSpace2[layP2] || 0;
         }
+        const _pa2 = cropPoolAvail(cand.crop, landSpace2);
+        const spaceLeft = _pa2.available;
+        const allocPool2 = _pa2.pool;
         if(spaceLeft < 0.001) continue;
         const lph = cropLabour(cand.crop, isMech);
         const maxByLabour = lph > 0 ? Math.min(spaceLeft, labourLeft / lph) : spaceLeft;
@@ -3060,7 +3199,7 @@ function generatePlan(s){
         const fg  = effectiveFoodGroup(cand.crop);
         const key = FG_KEY[fg];
         if(!key) continue;
-        addAllocation(cand.crop, allocHa, key);
+        addAllocation(cand.crop, allocHa, key, allocPool2);
         allocated = true;
         break;  // one allocation per iteration so budgets are rechecked
       }
@@ -3068,6 +3207,7 @@ function generatePlan(s){
       // ── Then try livestock for remaining pasture / labour ──────────────────
       if(!allocated && pastureLeft > 0.001 && labourLeft > 1){
         for(const lc of lsYieldOrder){
+          if(isAquaticLivestock(lc.ls)) continue;  // aquatic stock allocated in Phase 1 (surface-water budget)
           if(lc.spaceHaPerStep > pastureLeft + 0.0001) continue;
           if(lc.labourPerStep  > labourLeft  + 0.1)   continue;
           const maxByPasture = Math.floor((pastureLeft + 0.0001) / lc.spaceHaPerStep);
@@ -3966,8 +4106,9 @@ function landUseBreakdown(s, p){
   const annual    = Math.max(p.usedCoolHa||0, p.usedWarmHa||0);
   const perennial = p.usedPerennialHa||0;
   const pasture   = p.usedPastureHa||0;
-  const pond      = p.usedSurfaceWaterHa||0;
-  const total     = (s.annualHa||0)+(s.perennialHa||0)+(s.pastureHa||0)+(s.surfaceWaterHa||0);
+  const damOn     = s.irrigationDam;
+  const pond      = damOn ? sizeDam(p).footprintHa : (p.usedSurfaceWaterHa||0);
+  const total     = (s.annualHa||0)+(s.perennialHa||0)+(s.pastureHa||0)+(damOn ? 0 : (s.surfaceWaterHa||0));
   const usedSum   = annual+perennial+pasture+pond;
   const vacant    = Math.max(0, total - usedSum);
   return {annual, perennial, pasture, pond, vacant, total, usedSum};
@@ -3976,7 +4117,7 @@ const HATCH = "repeating-linear-gradient(45deg,#E4DBC4 0 5px,#D3C8AC 5px 10px)";
 const HATCH_LIGHT = "repeating-linear-gradient(45deg,rgba(255,255,255,.18) 0 4px,rgba(0,0,0,.06) 4px 8px)";
 function landCompositionFigure(s, p){
   const b = landUseBreakdown(s, p);
-  const denom = b.total > 0 ? b.total : 1;
+  const denom = Math.max(b.total, b.usedSum) > 0 ? Math.max(b.total, b.usedSum) : 1;
   const layers = p.layers || {canopy:0, trees:0, plants:0};
   const layerDefs = [
     {key:"canopy", label:"Canopy (≥25m)", color:LAYER_COLORS_BAR.canopy},
@@ -4007,7 +4148,7 @@ function landCompositionFigure(s, p){
     {label:"Annual beds", val:b.annual,    color:LAND_SEG_COLORS.annual},
     {label:"Perennial",   val:b.perennial, color:null, perennial:true},
     {label:"Pasture",     val:b.pasture,   color:LAND_SEG_COLORS.pasture},
-    {label:"Pond / water",val:b.pond,      color:LAND_SEG_COLORS.pond},
+    {label:s.irrigationDam?"Irrigation dam":"Pond / water",val:b.pond,      color:LAND_SEG_COLORS.pond},
     {label:"Vacant",      val:b.vacant,    color:LAND_SEG_COLORS.vacant, hatch:true},
   ];
   const barSegs = segs.filter(x=>x.val>0.00005).map((x,i)=>{
@@ -4135,12 +4276,12 @@ function compactBudgetStrip(s, p){
 
   // Land segments (reuse landUseBreakdown)
   const b = landUseBreakdown(s, p);
-  const lnDenom = b.total>0?b.total:1;
+  const lnDenom = Math.max(b.total, b.usedSum)>0?Math.max(b.total, b.usedSum):1;
   const lnSegs = [
     {label:"Annual beds", val:b.annual, color:LAND_SEG_COLORS.annual},
     {label:"Perennial", val:b.perennial, color:LAND_SEG_COLORS.perennial},
     {label:"Pasture", val:b.pasture, color:LAND_SEG_COLORS.pasture},
-    {label:"Pond", val:b.pond, color:LAND_SEG_COLORS.pond},
+    {label:s.irrigationDam?"Dam":"Pond", val:b.pond, color:LAND_SEG_COLORS.pond},
     {label:"Vacant", val:b.vacant, color:LAND_SEG_COLORS.vacant, hatch:true},
   ].filter(x=>x.val>0.00005);
   const lnBar = lnSegs.map((x,i)=>`<div title="${x.label}: ${fmtHa(x.val)}" style="width:${x.val/lnDenom*100}%;background:${x.hatch?HATCH:x.color};${i>0?'border-left:1px solid rgba(61,46,28,.22)':''}"></div>`).join("");
@@ -4162,7 +4303,18 @@ function compactBudgetStrip(s, p){
 }
 // Aromatic herbs — kept in DB and crop selection, but excluded from auto plan
 // (you only need tiny amounts, no point allocating land or labour to them)
-const AQUATIC_LIVESTOCK = new Set(["Rainbow Trout"]);
+// ── Aquatic habitat helpers (data-driven; replaces the old hardcoded Sets) ───
+// Each crop/animal's habitat comes from its `habitats` field in crops.json:
+//   absent / no "aquatic"  -> land-only
+//   ["aquatic"]            -> pure aquatic (surface water only)
+//   ["aquatic","land"]     -> "both": grows on land OR in water
+function cropHabitat(c){
+  const h = c && c.habitats;
+  if(!Array.isArray(h) || !h.includes("aquatic")) return "land";
+  return h.includes("land") ? "both" : "aquatic";
+}
+// Livestock are only ever pure-aquatic or land (never "both").
+function isAquaticLivestock(ls){ return cropHabitat(ls) === "aquatic"; }
 // ── ADG red-meat ceiling ─────────────────────────────────────────────────────
 // The Australian Dietary Guidelines cap LEAN RED MEAT at ~7 serves/person/week
 // (≈1 serve/person/day) — beef, lamb, veal, pork, goat, kangaroo. Poultry, fish and
@@ -4173,7 +4325,7 @@ function isRedMeatLivestock(ls){
   return !!ls && ls.food_group === "Meat" && RED_MEAT_CATEGORIES.has(ls.category);
 }
 const RED_MEAT_SERVES_PER_PERSON_DAY = 1.0;  // ADG: ~7/week ≈ 1/day
-const AQUATIC_CROPS     = new Set(["Water Spinach","Taro","Rice (Brown)","Rice (White)","Rice (Wild)"]);
+// AQUATIC_CROPS set retired — aquatic eligibility now comes from cropHabitat() (crops.json `habitats`).
 const HERB_EXCLUSIONS = new Set([
   "Basil","Chives","Coriander (Fresh)","Dill","Lemongrass","Mint","Parsley","Parsley (Curly)","Rosemary"
 ]);
@@ -4570,6 +4722,12 @@ function renderStep1(){
 }
 function renderStep2(){
   const zoneOpts = ZONES.map(z => `<option value="${z.id}" ${state.climateZone===z.id?"selected":""}>${z.code} — ${z.label}</option>`).join("");
+  const TOWN_STATE_ORDER = ["WA","SA","NT","QLD","NSW","ACT","VIC","TAS"];
+  const townOpts = TOWN_STATE_ORDER.map(st => {
+    const inSt = TOWNS.filter(t => t.st === st);
+    if(!inSt.length) return "";
+    return `<optgroup label="${st}">` + inSt.map(t => `<option value="${t.n}" ${state.town===t.n?"selected":""}>${t.n}</option>`).join("") + `</optgroup>`;
+  }).join("") + `<option value="Other" ${state.town==="Other"?"selected":""}>Other / enter coordinates…</option>`;
   const TEXTURES = [
     {id:"light",  label:"Light",   desc:"Sandy, loamy sand"},
     {id:"medium", label:"Medium",  desc:"Loam, silt loam"},
@@ -4586,6 +4744,24 @@ function renderStep2(){
     <div class="card" style="margin:0">
       <h2>Site conditions</h2>
       <p class="card-desc">Climate zone, soil type, and water availability. Determines which crops are suitable.</p>
+      <div style="margin-bottom:12px">
+        <label>Location (nearest town)</label>
+        <select onchange="selectTown(this.value)" style="width:100%">${townOpts}</select>
+        ${state.town==="Other" ? `
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input type="number" step="0.01" placeholder="lat (e.g. -31.95)" value="${state.lat}" onchange="state.lat=+this.value;state.plan=null;renderApp()" style="width:50%"/>
+          <input type="number" step="0.01" placeholder="lon (e.g. 115.86)" value="${state.lon}" onchange="state.lon=+this.value;state.plan=null;renderApp()" style="width:50%"/>
+        </div>` : `<div style="font-size:11px;color:var(--text-mid);margin-top:3px">Pins ${state.lat}, ${state.lon} for climate data · sets the zone &amp; rainfall below (both editable)</div>`}
+      </div>
+      <div style="margin-bottom:12px">
+        <label>Climate data (SILO live fetch)</label>
+        <div style="font-size:11px;color:var(--text-mid);margin-bottom:4px">${state.climateEto ? `Live: ${state.climateLabel}` : "Using the bundled Perth 2005\u20132024 normal. Enter an email and fetch to load this location\u2019s real monthly climate from SILO."}</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="email" placeholder="email for SILO" value="${state.siloEmail||''}" oninput="state.siloEmail=this.value" style="flex:1"/>
+          <button class="btn" onclick="siloFetchClimate()" style="white-space:nowrap">Fetch climate</button>
+        </div>
+        ${state.climateStatus ? `<div style="font-size:11px;margin-top:4px;color:${state.climateStatus.type==='err'?'#9A3A2A':state.climateStatus.type==='ok'?'var(--green)':'var(--text-mid)'}">${state.climateStatus.msg}</div>` : ""}
+      </div>
       <div style="margin-bottom:12px">
         <label>Climate zone (Köppen)</label>
         <select onchange="state.climateZone=this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100%">${zoneOpts}</select>
@@ -4651,10 +4827,23 @@ function renderStep2(){
         <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Grazing — poultry, ruminants, pigs, bees</div>
       </div>
       <div style="margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" ${state.irrigationDam?'checked':''} onchange="state.irrigationDam=this.checked;state.plan=null;renderApp()" style="width:auto;margin:0"/>
+          Self-supplied irrigation (size a dam)
+        </label>
+        <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Work out the irrigation water the plan needs across the year and size a storage dam; its surface also grows fish &amp; aquatic crops.</div>
+      </div>
+      ${state.irrigationDam ? `
+      <div style="margin-bottom:12px">
+        <label>Dam depth (m)</label>
+        <input type="number" min="0.5" step="0.5" value="${state.damDepth||3}" onchange="state.damDepth=+this.value;state.plan=null;renderApp()" style="width:100%"/>
+        <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Average usable depth — converts storage volume to surface footprint</div>
+      </div>` : `
+      <div style="margin-bottom:12px">
         <label>Surface water area (ha)</label>
         <input type="number" min="0" step="0.01" value="${state.surfaceWaterHa||0}" onchange="state.surfaceWaterHa=+this.value;state.plan=null;renderApp()" style="width:100%"/>
         <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Pond / dam / tank — fish and aquatic crops</div>
-      </div>
+      </div>`}
     </div>
 
     </div>
@@ -6075,6 +6264,281 @@ function renderStep5(){
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// IRRIGATION DEMAND ENGINE (preview — no dam sizing yet)
+// Per-crop monthly water demand via FAO-56 Kc curve-walk × reference ET − rainfall.
+// Perth climate normals are a placeholder baseline / offline fallback; a live SILO
+// feed will replace them later. Reusable per-crop function so demand can also run
+// at selection time for a future "minimise irrigation" objective.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Jan..Dec, mm. SILO DataDrill (grid -31.95, 115.85), FAO-56 short-crop ETo (et_short_crop)
+// and daily_rain, aggregated to a 2005–2024 monthly normal. Climate baseline / offline
+// fallback until a live per-location SILO fetch is wired in.
+const PERTH_ETO  = [208, 172, 151, 100, 71, 52, 53, 69, 93, 133, 167, 202];
+const PERTH_RAIN = [14, 17, 18, 39, 78, 113, 136, 112, 72, 36, 24, 11];
+
+// Aggregate a SILO DataDrill CSV (cols: lat,lon,YYYY-MM-DD,daily_rain,src,et_short_crop,src,meta)
+// into 12 monthly normals = mean monthly total ETo & rainfall (mm), averaged across the years present.
+function aggregateSiloCsv(text){
+  const sumR = {}, sumE = {}, yrsByMon = {};
+  let days = 0;
+  for(const ln of String(text).split(/\r?\n/)){
+    const c = ln.split(",");
+    if(c.length < 6) continue;
+    const m = (c[2] || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);   // matches data rows; skips header + metadata
+    if(!m) continue;
+    const rain = parseFloat(c[3]), eto = parseFloat(c[5]);
+    if(isNaN(rain) || isNaN(eto)) continue;
+    const y = +m[1], mo = +m[2], key = y * 100 + mo;
+    sumR[key] = (sumR[key] || 0) + rain;
+    sumE[key] = (sumE[key] || 0) + eto;
+    (yrsByMon[mo] = yrsByMon[mo] || new Set()).add(y);
+    days++;
+  }
+  if(!days) return null;
+  const eto = [], rain = [], allYears = new Set();
+  for(let mo = 1; mo <= 12; mo++){
+    const ys = [...(yrsByMon[mo] || [])];
+    ys.forEach(y => allYears.add(y));
+    let se = 0, sr = 0;
+    ys.forEach(y => { se += sumE[y*100+mo] || 0; sr += sumR[y*100+mo] || 0; });
+    eto.push(ys.length ? +(se / ys.length).toFixed(1) : PERTH_ETO[mo-1]);
+    rain.push(ys.length ? +(sr / ys.length).toFixed(1) : PERTH_RAIN[mo-1]);
+  }
+  const ay = [...allYears].sort();
+  return { eto, rain, days, years: ay.length ? (ay[0] + "\u2013" + ay[ay.length-1]) : "" };
+}
+
+// Live SILO DataDrill fetch for the current location → 12 monthly normals into state.
+async function siloFetchClimate(){
+  if(!state.siloEmail || !/.+@.+\..+/.test(state.siloEmail)){
+    state.climateStatus = { type:"err", msg:"Enter a valid email address (SILO requires one) before fetching." };
+    renderApp(); return;
+  }
+  if(state.lat == null || state.lon == null){
+    state.climateStatus = { type:"err", msg:"Pick a location first." };
+    renderApp(); return;
+  }
+  const lat = (Math.round(state.lat / 0.05) * 0.05).toFixed(2);
+  const lon = (Math.round(state.lon / 0.05) * 0.05).toFixed(2);
+  state.climateStatus = { type:"load", msg:"Fetching climate from SILO\u2026 (20-year daily series; may take a few seconds)" };
+  renderApp();
+  const url = "https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php"
+    + "?format=csv&comment=RF&lat=" + lat + "&lon=" + lon
+    + "&start=20050101&finish=20241231&username=" + encodeURIComponent(state.siloEmail) + "&password=apirequest";
+  try {
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error("HTTP " + resp.status);
+    const text = await resp.text();
+    const agg = aggregateSiloCsv(text);
+    if(!agg || agg.days < 300) throw new Error("unexpected response (no daily data)");
+    state.climateEto = agg.eto;
+    state.climateRain = agg.rain;
+    state.climateLabel = "SILO " + lat + ", " + lon + " \u00b7 " + agg.years + " normal";
+    state.climateStatus = { type:"ok", msg:"Loaded " + agg.years + ": ETo " + Math.round(agg.eto.reduce((a,b)=>a+b,0)) + " mm/yr, rainfall " + Math.round(agg.rain.reduce((a,b)=>a+b,0)) + " mm/yr." };
+    state.plan = null;
+    renderApp();
+  } catch(e){
+    state.climateStatus = { type:"err", msg:"Couldn\u2019t fetch from SILO (" + e.message + "). Still using the bundled climate \u2014 check the email and connection, or try again." };
+    renderApp();
+  }
+}
+
+// Perennial Kc categories with a year-round canopy → flat Kc. Everything else is
+// treated as winter-dormant/deciduous. (aquatic_wetbed crops are excluded upstream.)
+const EVERGREEN_CATS = new Set(["citrus", "tropical_evergreen", "evergreen_sclerophyll",
+  "nut_evergreen", "banana", "palm", "pineapple"]);
+
+// 12-month Kc curve (Jan..Dec) for one crop, from its kc object:
+//   evergreen perennial → flat at Kc-mid all year (ET seasonality drives demand)
+//   deciduous perennial → 4-stage curve over the Sep–Apr canopy season, 0 in winter
+//   annual              → 4-stage curve over [planting → end of harvest];
+//                         planted May (cool-season) or Oct (warm-season)
+function monthlyKc(crop){
+  const out = new Array(12).fill(0);
+  const kc = crop.kc;
+  if(!kc) return out;
+  const ini = kc.ini, mid = kc.mid, end = kc.end, cat = kc.cat;
+  const st = (Array.isArray(kc.stages) && kc.stages.length >= 4) ? kc.stages : [0.2, 0.3, 0.3, 0.2];
+  // Kc at fractional position f (0..1) along the growing season (FAO trapezoid).
+  const kcAt = (f) => {
+    const a = st[0], b = st[1], c = st[2], d = st[3];
+    if(f < a)         return ini;
+    if(f < a + b)     return ini + (mid - ini) * (f - a) / (b || 1e-9);
+    if(f < a + b + c) return mid;
+    return mid + (end - mid) * Math.min(1, (f - (a + b + c)) / (d || 1e-9));
+  };
+
+  if(crop.perennial){
+    if(EVERGREEN_CATS.has(cat)){ out.fill(mid); return out; }
+    const start = 8, L = 8;                          // Sep (index 8), 8-month canopy season
+    for(let k = 0; k < L; k++) out[(start + k) % 12] = kcAt((k + 0.5) / L);
+    return out;
+  }
+
+  // annual
+  const plant = (getCropSeason(crop) === "warm") ? 9 : 4;   // Oct=9 warm, May=4 cool
+  const harvest = [];
+  MONTHS.forEach((m, i) => { const v = (crop.months || {})[m]; if(v === "P" || v === "S") harvest.push(i); });
+  let L;
+  if(harvest.length){
+    let maxFwd = 0;
+    harvest.forEach(h => { const fwd = (h - plant + 12) % 12; if(fwd > maxFwd) maxFwd = fwd; });
+    L = maxFwd + 1;                                  // planting month → last harvest month
+  } else {
+    L = Math.max(3, Math.round((crop.gmax || crop.gmin || 120) / 30));
+  }
+  L = Math.min(L, 12);
+  for(let k = 0; k < L; k++) out[(plant + k) % 12] = kcAt((k + 0.5) / L);
+  return out;
+}
+
+// Litres of irrigation per month (Jan..Dec) for one crop over areaHa.
+// irrigation = max(0, ETc − rain); effective rain = min(rain, ETc). 1mm·ha = 10,000 L.
+function cropMonthlyIrrigation(crop, areaHa, eto, rain){
+  eto = eto || (typeof state !== "undefined" && state.climateEto) || PERTH_ETO; rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
+  const kcA = monthlyKc(crop);
+  const out = new Array(12);
+  for(let m = 0; m < 12; m++){
+    const etc = kcA[m] * eto[m];
+    out[m] = Math.max(0, etc - rain[m]) * areaHa * 10000;
+  }
+  return out;
+}
+
+// Property monthly irrigation curve + per-crop annual totals.
+// Includes land perennials + all annuals; excludes aquatic/"both" (pond-grown) and Kc-less crops.
+function propertyIrrigationCurve(plan, eto, rain){
+  eto = eto || (typeof state !== "undefined" && state.climateEto) || PERTH_ETO; rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
+  const monthly = new Array(12).fill(0);
+  const perCrop = [];
+  (plan.selected || []).forEach(({crop, allocHa}) => {
+    if(cropHabitat(crop) !== "land") return;
+    if(!crop.kc) return;
+    const lit = cropMonthlyIrrigation(crop, allocHa, eto, rain);
+    let annual = 0;
+    for(let m = 0; m < 12; m++){ monthly[m] += lit[m]; annual += lit[m]; }
+    if(annual > 0) perCrop.push({ name: crop.name, annualL: annual });
+  });
+  perCrop.sort((a, b) => b.annualL - a.annualL);
+  return { monthly, perCrop, annualTotal: monthly.reduce((s, v) => s + v, 0) };
+}
+
+// Reservoir storage from a monthly demand series (Rippl mass-curve): the largest
+// cumulative draw-down across any run of demand months, resetting at refill (zero-demand)
+// months. NOT the naive sum — that would over-size a bimodal-dry-season climate.
+function maxCumulativeDeficit(monthly){
+  const eps = 1; // litres ≈ 0
+  if(monthly.every(v => v > eps)) return monthly.reduce((s, v) => s + v, 0); // never refills
+  let max = 0, run = 0;
+  for(let i = 0; i < 24; i++){            // doubled to handle the dry season wrapping the year
+    const v = monthly[i % 12];
+    if(v <= eps) run = 0; else { run += v; if(run > max) max = run; }
+  }
+  return max;
+}
+
+// Size the dam: storage from the deficit, surface = max(storage surface, aquatic surface).
+function sizeDam(plan, eto, rain){
+  const irr = propertyIrrigationCurve(plan, eto, rain);
+  const storageL = maxCumulativeDeficit(irr.monthly);
+  const depth = Math.max(0.5, (typeof state !== "undefined" && state.damDepth) || 3);
+  const irrSurfaceM2 = storageL / 1000 / depth;          // volume(m³) / depth
+  // Surface the chosen aquatic crops/livestock actually use; the allocator already tracks
+  // this in usedSurfaceWaterHa, honouring "both → land default, spill to water". Fall back to
+  // a pure-aquatic re-derivation only if an adjusted plan didn't carry the field.
+  let aquaticHa = plan.usedSurfaceWaterHa;
+  if(aquaticHa == null){
+    aquaticHa = 0;
+    (plan.selected || []).forEach(({crop, allocHa}) => { if(cropHabitat(crop) === "aquatic") aquaticHa += allocHa; });
+    (plan.lsSelected || []).forEach(({ls, count}) => { if(isAquaticLivestock(ls)) aquaticHa += (ls.space_m2_per_animal || 0) * count / 10000; });
+  }
+  const aquaticM2 = aquaticHa * 10000;
+  const surfaceM2 = Math.max(irrSurfaceM2, aquaticM2);
+  return {
+    storageL, depth, irrSurfaceM2, aquaticM2, surfaceM2,
+    volumeL: surfaceM2 * depth * 1000,                   // actual capacity at that surface
+    footprintHa: surfaceM2 / 10000,
+    bind: irrSurfaceM2 >= aquaticM2 ? "irrigation storage" : "aquatic surface",
+    monthly: irr.monthly
+  };
+}
+
+// Standalone monthly-litres chart + per-crop annual water-use card (Summary view).
+function renderIrrigationPreview(p){
+  const irr = propertyIrrigationCurve(p);
+  if(irr.annualTotal <= 0){
+    return `<div class="adj-card"><h2>Irrigation demand (preview)</h2>
+      <p class="desc">No land-grown crops with water demand in the current plan.</p></div>`;
+  }
+  const niceCeil = (v) => {
+    if(v <= 0) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(v))), n = v / mag;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
+  };
+  const maxL = Math.max.apply(null, irr.monthly);
+  const axisKL = niceCeil(maxL / 1000), scaleMax = axisKL * 1000;
+  const W = 540, H = 210, PL = 46, PR = 12, PT = 12, PB = 26;
+  const iW = W - PL - PR, iH = H - PT - PB, gap = iW / 12, bw = gap * 0.62;
+
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
+    const y = PT + iH - f * iH, lbl = (axisKL * f).toFixed(axisKL >= 10 ? 0 : 1);
+    return `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`
+      + `<text x="${PL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-mid)">${lbl}</text>`;
+  }).join("");
+  const bars = irr.monthly.map((L, i) => {
+    const h = scaleMax > 0 ? (L / scaleMax) * iH : 0;
+    const x = PL + i * gap + (gap - bw) / 2, y = PT + iH - h;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" fill="#3E7C9A" stroke="#2C5A72" stroke-width="1"/>`
+      + `<text x="${(x + bw / 2).toFixed(1)}" y="${(PT + iH + 14).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-mid)">${MONTHS[i].charAt(0).toUpperCase()}</text>`;
+  }).join("");
+  const svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:560px;display:block;margin:6px 0">`
+    + `<text x="${PL - 6}" y="${PT - 2}" text-anchor="end" font-size="9" fill="var(--text-mid)">kL</text>`
+    + grid + bars + `</svg>`;
+
+  const peakIdx = irr.monthly.indexOf(maxL);
+  const peakName = (typeof MONTH_NAMES !== "undefined" && MONTH_NAMES[peakIdx]) || MONTHS[peakIdx];
+  const rows = irr.perCrop.slice(0, 15).map(c =>
+    `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid var(--border)">`
+    + `<span>${c.name}</span><span style="font-weight:700">${(c.annualL / 1000).toFixed(1)} kL/yr</span></div>`).join("");
+  const moreN = irr.perCrop.length - 15;
+
+  return `<div class="adj-card">
+    <h2>Irrigation demand (preview)</h2>
+    <p class="desc">Estimated monthly irrigation the crop plan needs, summed across land-grown perennials and annuals (aquatic crops draw from the pond and are excluded). Placeholder Perth climate.</p>
+    ${svg}
+    <div style="font-size:12px;margin-top:4px">Total ≈ <strong>${(irr.annualTotal / 1000).toFixed(0)} kL/year</strong> (${(irr.annualTotal / 1e6).toFixed(2)} ML) · peak month <strong>${peakName}</strong> at ${(maxL / 1000).toFixed(0)} kL.</div>
+    <h3 style="margin:12px 0 4px;font-size:13px">Annual water use by crop</h3>
+    ${rows}${moreN > 0 ? `<div style="font-size:11px;color:var(--text-mid);padding-top:4px">+ ${moreN} more crop${moreN > 1 ? "s" : ""}</div>` : ""}
+    <p class="desc" style="margin-top:8px">Caveat: omits irrigation efficiency, dam-surface evaporation, and catchment fill; climate figures are placeholder normals pending the live SILO feed.</p>
+  </div>`;
+}
+
+// Irrigation-dam summary card (only when the toggle is on).
+function renderDamSection(p){
+  if(!(typeof state !== "undefined" && state.irrigationDam)) return "";
+  const dam = sizeDam(p);
+  const fmtVol = (L) => L >= 1e6 ? `${(L/1e6).toFixed(2)} ML` : `${(L/1000).toFixed(0)} kL`;
+  const aquaCrops = (p.selected || []).filter(s => cropHabitat(s.crop) === "aquatic").map(s => s.crop.name)
+    .concat((p.lsSelected || []).filter(x => isAquaticLivestock(x.ls)).map(x => x.ls.name));
+  const cropLandHa = (p.usedAnnualHa || 0) + (p.usedPerennialHa || 0) + (p.usedPastureHa || 0);
+  return `<div class="adj-card">
+    <h2>Irrigation dam</h2>
+    <p class="desc">A dam sized to store the irrigation water above and grow fish &amp; aquatic crops on its surface. Storage is the maximum cumulative dry-season deficit; footprint assumes ${dam.depth} m average depth.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:22px;margin:10px 0">
+      <div><div style="color:var(--text-mid);font-size:11px">Storage needed</div><strong style="font-size:17px">${fmtVol(dam.storageL)}</strong></div>
+      <div><div style="color:var(--text-mid);font-size:11px">Dam capacity</div><strong style="font-size:17px">${fmtVol(dam.volumeL)}</strong></div>
+      <div><div style="color:var(--text-mid);font-size:11px">Surface footprint</div><strong style="font-size:17px">${Math.round(dam.surfaceM2).toLocaleString()} m²</strong><div style="font-size:11px;color:var(--text-mid)">${dam.footprintHa.toFixed(3)} ha</div></div>
+      <div><div style="color:var(--text-mid);font-size:11px">Depth</div><strong style="font-size:17px">${dam.depth} m</strong></div>
+    </div>
+    <div style="font-size:12px">Sized by <strong>${dam.bind}</strong>${dam.bind === "aquatic surface" ? " — the aquatic crops need more surface than the irrigation storage does, so the dam holds more than the irrigation requirement." : "."}</div>
+    ${aquaCrops.length ? `<div style="font-size:12px;margin-top:6px">Grown on the water surface: ${aquaCrops.join(", ")}.</div>` : `<div style="font-size:12px;margin-top:6px;color:var(--text-mid)">No aquatic crops in this plan — the dam is purely irrigation storage.</div>`}
+    <div style="font-size:12px;margin-top:6px">The dam adds <strong>${dam.footprintHa.toFixed(3)} ha</strong> of surface, on top of your ${cropLandHa.toFixed(2)} ha of cropped land.</div>
+    <p class="desc" style="margin-top:8px">Caveat: assumes winter rain refills the dam (no catchment fillability check) and omits irrigation-efficiency losses and dam-surface evaporation — all of which push the true dam somewhat larger.</p>
+  </div>`;
+}
+
 function renderStep6(){
   // Generate plan if missing
   if(!state.plan) state.plan = generatePlan(state);
@@ -6380,6 +6844,10 @@ function renderStep6(){
       </div>
     </div>
     
+    ${renderIrrigationPreview(p)}
+
+    ${renderDamSection(p)}
+
     ${(()=>{
       // ── Species Schedule table ──────────────────────────────────────────────
       const MNS = MONTH_NAMES, MKS = MONTHS;
@@ -6714,12 +7182,16 @@ function serializeState(){
     fertility: s.fertility,
     confidence: s.confidence,
     climateZone: s.climateZone,
+    town: s.town, lat: s.lat, lon: s.lon,
+    climateEto: s.climateEto, climateRain: s.climateRain, climateLabel: s.climateLabel,
     soilTexture: s.soilTexture,
     annualRainfall: s.annualRainfall,
     annualHa: s.annualHa,
     perennialHa: s.perennialHa,
     pastureHa:        s.pastureHa,
     surfaceWaterHa:   s.surfaceWaterHa   || 0,
+    irrigationDam:    s.irrigationDam    || false,
+    damDepth:         s.damDepth         || 3,
     landFixed:        s.landFixed        !== false,
     hasIrrigation:    s.hasIrrigation    || false,
     objectives: s.objectives,
@@ -6746,12 +7218,20 @@ function deserializeState(str){
       fertility:       obj.fertility        || state.fertility,
       confidence:      obj.confidence       ?? state.confidence,
       climateZone:     obj.climateZone      || state.climateZone,
+      town:            obj.town             ?? state.town,
+      lat:             obj.lat              ?? state.lat,
+      lon:             obj.lon              ?? state.lon,
+      climateEto:      obj.climateEto       ?? state.climateEto,
+      climateRain:     obj.climateRain      ?? state.climateRain,
+      climateLabel:    obj.climateLabel     ?? state.climateLabel,
       soilTexture:     obj.soilTexture      || state.soilTexture,
       annualRainfall:  obj.annualRainfall   ?? state.annualRainfall,
       annualHa:        obj.annualHa         ?? state.annualHa,
       perennialHa:     obj.perennialHa      ?? state.perennialHa,
       pastureHa:        obj.pastureHa        ?? state.pastureHa,
       surfaceWaterHa:   obj.surfaceWaterHa   ?? state.surfaceWaterHa,
+      irrigationDam:    obj.irrigationDam    ?? state.irrigationDam,
+      damDepth:         obj.damDepth         ?? state.damDepth,
       landFixed:        obj.landFixed        ?? state.landFixed,
       hasIrrigation:    obj.hasIrrigation    ?? state.hasIrrigation,
       objectives:      obj.objectives       || state.objectives,
