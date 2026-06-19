@@ -1538,12 +1538,16 @@ function selectTown(name){
   } else {
     const t = TOWNS.find(x => x.n === name);
     if(t){
-      state.town = t.n; state.lat = t.lat; state.lon = t.lon; state.climateZone = t.z; state.annualRainfall = t.r;
+      state.town = t.n; state.lat = t.lat; state.lon = t.lon; state.climateZone = t.z;
       const c = CLIMATE_DB[t.n];
       if(c){
         state.climateEto = c.eto; state.climateRain = c.rain;
         state.climateTmax = c.tmax; state.climateTmin = c.tmin; state.climateTminext = c.tminext;
         state.climateLabel = t.n + " - SILO 2005-2024";
+        // Actual SILO 2005-2024 annual rainfall — replaces the town-list estimate.
+        state.annualRainfall = Math.round(c.rain.reduce((a,b) => a + b, 0));
+      } else {
+        state.annualRainfall = t.r;   // fallback estimate only if no baked climate exists
       }
     }
   }
@@ -2083,7 +2087,7 @@ let state={
   climateTminext: CLIMATE_DB["Darlington (Perth Hills)"].tminext,
   climateLabel:   "Darlington (Perth Hills) - SILO 2005-2024",
   soilTexture:"heavy",      // TEXTR code: light/medium/heavy/organic/wide
-  annualRainfall:1100,       // mm/yr (Darlington Hills default)
+  annualRainfall:852,        // mm/yr — Darlington SILO 2005-2024 actual (default site)
   fertility:"medium",
   annualHa:0.05,
   perennialHa:0.2,
@@ -6546,11 +6550,65 @@ function sizeDam(plan, eto, rain){
   };
 }
 
+// Per-month water balance for the plan's land crops: crop ET demand split into the
+// part met by effective rain and the irrigation shortfall (demand = effRain + irrigation).
+function propertyWaterBalance(plan, eto, rain){
+  eto  = eto  || (typeof state !== "undefined" && state.climateEto)  || PERTH_ETO;
+  rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
+  const demand = new Array(12).fill(0), effRain = new Array(12).fill(0), irrig = new Array(12).fill(0);
+  const perCrop = [];
+  (plan.selected || []).forEach(({crop, allocHa}) => {
+    if(cropHabitat(crop) !== "land") return;
+    if(!crop.kc) return;
+    const kcA = monthlyKc(crop);
+    let annualIrr = 0;
+    for(let m = 0; m < 12; m++){
+      const etc = kcA[m] * eto[m];                 // crop ET, mm
+      const eff = Math.min(rain[m], etc);          // rain that offsets watering, mm
+      const irr = Math.max(0, etc - rain[m]);      // shortfall to irrigate, mm
+      const f   = allocHa * 10000;                 // mm·ha -> L
+      demand[m]  += etc * f;
+      effRain[m] += eff * f;
+      irrig[m]   += irr * f;
+      annualIrr  += irr * f;
+    }
+    if(annualIrr > 0) perCrop.push({ name: crop.name, annualL: annualIrr });
+  });
+  perCrop.sort((a, b) => b.annualL - a.annualL);
+  const storageL = maxCumulativeDeficit(irrig);
+  const damLevel = damLevelSeries(irrig, storageL);
+  const sum = a => a.reduce((s, v) => s + v, 0);
+  return { demand, effRain, irrig, perCrop, damLevel, storageL,
+           annualDemand: sum(demand), annualEffRain: sum(effRain), annualIrrig: sum(irrig) };
+}
+
+// Dam level (L) across Jan..Dec for a monthly irrigation-draw series, matching the Rippl
+// storage figure: the reservoir sits full (= storage) through refill months and draws down
+// through each dry run; its lowest point touches 0 when sized exactly to `storage`. Computed
+// over a doubled year so a dry season that wraps Dec->Jan is captured.
+function damLevelSeries(irrig, storageL){
+  const eps = 1;
+  const level = new Array(12).fill(storageL);
+  if(irrig.every(v => v > eps)){
+    // No wet month to refill: the dam is filled once and drawn down across the whole year.
+    let cum = 0;
+    for(let m = 0; m < 12; m++){ level[m] = Math.max(0, storageL - cum); cum += irrig[m]; }
+    return level;
+  }
+  let run = 0;
+  for(let i = 0; i < 24; i++){
+    const v = irrig[i % 12];
+    if(v <= eps) run = 0; else run += v;
+    if(i >= 12) level[i % 12] = Math.max(0, storageL - run);
+  }
+  return level;
+}
+
 // Standalone monthly-litres chart + per-crop annual water-use card (Summary view).
 function renderIrrigationPreview(p){
-  const irr = propertyIrrigationCurve(p);
-  if(irr.annualTotal <= 0){
-    return `<div class="adj-card"><h2>Irrigation demand (preview)</h2>
+  const wb = propertyWaterBalance(p);
+  if(wb.annualDemand <= 0){
+    return `<div class="adj-card"><h2>Water balance (preview)</h2>
       <p class="desc">No land-grown crops with water demand in the current plan.</p></div>`;
   }
   const niceCeil = (v) => {
@@ -6558,9 +6616,10 @@ function renderIrrigationPreview(p){
     const mag = Math.pow(10, Math.floor(Math.log10(v))), n = v / mag;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
   };
-  const maxL = Math.max.apply(null, irr.monthly);
-  const axisKL = niceCeil(maxL / 1000), scaleMax = axisKL * 1000;
-  const W = 540, H = 210, PL = 46, PR = 12, PT = 12, PB = 26;
+  const peakDemandL = Math.max.apply(null, wb.demand);
+  const axisKL = niceCeil(peakDemandL / 1000), scaleMax = axisKL * 1000;        // left axis: kL/month
+  const rAxisKL = niceCeil((wb.storageL / 1000) || 1), rScaleMax = rAxisKL * 1000; // right axis: kL stored
+  const W = 560, H = 232, PL = 48, PR = 50, PT = 14, PB = 28;
   const iW = W - PL - PR, iH = H - PT - PB, gap = iW / 12, bw = gap * 0.62;
 
   const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
@@ -6568,29 +6627,59 @@ function renderIrrigationPreview(p){
     return `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`
       + `<text x="${PL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-mid)">${lbl}</text>`;
   }).join("");
-  const bars = irr.monthly.map((L, i) => {
-    const h = scaleMax > 0 ? (L / scaleMax) * iH : 0;
-    const x = PL + i * gap + (gap - bw) / 2, y = PT + iH - h;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" fill="#3E7C9A" stroke="#2C5A72" stroke-width="1"/>`
+  const rAxis = [0, 0.5, 1].map(f => {
+    const y = PT + iH - f * iH, lbl = (rAxisKL * f).toFixed(rAxisKL >= 10 ? 0 : 1);
+    return `<text x="${W - PR + 6}" y="${(y + 3).toFixed(1)}" text-anchor="start" font-size="9" fill="#B5762F">${lbl}</text>`;
+  }).join("");
+
+  // Stacked bar per month: rain-met (green) at the base, irrigation shortfall (blue) on top.
+  // Full bar height = crop ET demand; the blue cap = the deficit storage must cover.
+  const bars = wb.demand.map((D, i) => {
+    const x = PL + i * gap + (gap - bw) / 2;
+    const hRain = scaleMax > 0 ? (wb.effRain[i] / scaleMax) * iH : 0;
+    const hIrr  = scaleMax > 0 ? (wb.irrig[i]   / scaleMax) * iH : 0;
+    const yRain = PT + iH - hRain, yIrr = yRain - hIrr;
+    return `<rect x="${x.toFixed(1)}" y="${yRain.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hRain).toFixed(1)}" fill="#5C7A3A"/>`
+      + `<rect x="${x.toFixed(1)}" y="${yIrr.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hIrr).toFixed(1)}" fill="#3E7C9A"/>`
       + `<text x="${(x + bw / 2).toFixed(1)}" y="${(PT + iH + 14).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-mid)">${MONTHS[i].charAt(0).toUpperCase()}</text>`;
   }).join("");
-  const svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:560px;display:block;margin:6px 0">`
-    + `<text x="${PL - 6}" y="${PT - 2}" text-anchor="end" font-size="9" fill="var(--text-mid)">kL</text>`
-    + grid + bars + `</svg>`;
 
-  const peakIdx = irr.monthly.indexOf(maxL);
-  const peakName = (typeof MONTH_NAMES !== "undefined" && MONTH_NAMES[peakIdx]) || MONTHS[peakIdx];
-  const rows = irr.perCrop.slice(0, 15).map(c =>
+  // Dam-level line (right axis): full through winter, drawing down to empty across the dry season.
+  const pts = wb.damLevel.map((L, i) => {
+    const cx = PL + i * gap + gap / 2;
+    const cy = PT + iH - (rScaleMax > 0 ? (L / rScaleMax) * iH : 0);
+    return `${cx.toFixed(1)},${cy.toFixed(1)}`;
+  });
+  const dots = wb.damLevel.map((L, i) => {
+    const cx = PL + i * gap + gap / 2, cy = PT + iH - (rScaleMax > 0 ? (L / rScaleMax) * iH : 0);
+    return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.1" fill="#C4823A"/>`;
+  }).join("");
+  const linePath = `<polyline points="${pts.join(" ")}" fill="none" stroke="#C4823A" stroke-width="2"/>` + dots;
+
+  const svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:600px;display:block;margin:6px 0">`
+    + `<text x="${PL - 6}" y="${PT - 3}" text-anchor="end" font-size="9" fill="var(--text-mid)">kL/mo</text>`
+    + `<text x="${W - PR + 6}" y="${PT - 3}" text-anchor="start" font-size="9" fill="#B5762F">kL dam</text>`
+    + grid + rAxis + bars + linePath + `</svg>`;
+
+  const legend = `<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin:0 0 6px">`
+    + `<span><span style="display:inline-block;width:10px;height:10px;background:#5C7A3A;border-radius:2px;vertical-align:middle"></span> Met by rain</span>`
+    + `<span><span style="display:inline-block;width:10px;height:10px;background:#3E7C9A;border-radius:2px;vertical-align:middle"></span> Needs irrigation</span>`
+    + `<span><span style="display:inline-block;width:14px;height:2px;background:#C4823A;vertical-align:middle"></span> Dam level (full → empty = storage)</span>`
+    + `</div>`;
+
+  const rainPct = wb.annualDemand > 0 ? Math.round(100 * wb.annualEffRain / wb.annualDemand) : 0;
+  const rows = wb.perCrop.slice(0, 15).map(c =>
     `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid var(--border)">`
     + `<span>${c.name}</span><span style="font-weight:700">${(c.annualL / 1000).toFixed(1)} kL/yr</span></div>`).join("");
-  const moreN = irr.perCrop.length - 15;
+  const moreN = wb.perCrop.length - 15;
 
   return `<div class="adj-card">
-    <h2>Irrigation demand (preview)</h2>
-    <p class="desc">Estimated monthly irrigation the crop plan needs, summed across land-grown perennials and annuals (aquatic crops draw from the pond and are excluded). Placeholder Perth climate.</p>
+    <h2>Water balance (preview)</h2>
+    <p class="desc">Monthly crop water demand (ET) for land-grown crops, split into the part rain covers and the part you irrigate. The dam-level line carries winter water into summer; the depth it draws down to empty is the storage the dam must hold. Effective rain on the cropped area only (aquatic crops draw from the pond and are excluded). Climate: ${state.climateLabel || "bundled Perth normal"}.</p>
+    ${legend}
     ${svg}
-    <div style="font-size:12px;margin-top:4px">Total ≈ <strong>${(irr.annualTotal / 1000).toFixed(0)} kL/year</strong> (${(irr.annualTotal / 1e6).toFixed(2)} ML) · peak month <strong>${peakName}</strong> at ${(maxL / 1000).toFixed(0)} kL.</div>
-    <h3 style="margin:12px 0 4px;font-size:13px">Annual water use by crop</h3>
+    <div style="font-size:12px;margin-top:4px">Crop demand ≈ <strong>${(wb.annualDemand / 1000).toFixed(0)} kL/yr</strong>; rain covers <strong>${(wb.annualEffRain / 1000).toFixed(0)} kL</strong> (${rainPct}%), leaving <strong>${(wb.annualIrrig / 1000).toFixed(0)} kL</strong> to irrigate. Peak storage to carry the dry season ≈ <strong>${(wb.storageL / 1000).toFixed(0)} kL</strong> — the irrigation dam size.</div>
+    <h3 style="margin:12px 0 4px;font-size:13px">Annual irrigation by crop</h3>
     ${rows}${moreN > 0 ? `<div style="font-size:11px;color:var(--text-mid);padding-top:4px">+ ${moreN} more crop${moreN > 1 ? "s" : ""}</div>` : ""}
     <p class="desc" style="margin-top:8px">Caveat: omits irrigation efficiency, dam-surface evaporation, and catchment fill; climate figures are SILO 2005-2024 normals for the selected location.</p>
   </div>`;
