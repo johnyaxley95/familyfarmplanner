@@ -1440,12 +1440,116 @@ const TOWNS = [
   {n:"Burnie",st:"TAS",lat:-41.05,lon:145.91,z:"Do",r:1000},
 ];
 
+// Per-town climate normals (SILO DataDrill, 2005–2024). Built once via climate_builder.html.
+//   eto/rain   = mean monthly total (mm)
+//   tmax/tmin  = mean daily max/min (°C)
+//   tminext    = mean of each year's coldest night that month (°C) — the frost metric vs ktmp
+const CLIMATE_DB = {
+  "Darlington (Perth Hills)": { eto: [210,172,149,97,66,47,47,61,84,127,164,202], rain: [19,17,25,42,92,139,165,153,101,51,34,14], tmax: [32.3,32.1,29.5,25,21,17.8,16.8,17.8,19.5,23,26.8,30], tmin: [16.6,17,15.6,12.6,9.7,7.9,7.3,7.6,8.3,10.1,12.6,14.7], tminext: [11,11.3,9,6.8,4.2,2.5,2,2.5,3.2,4.7,7.4,9.2] },
+  "Perth": { eto: [208,172,151,100,71,52,53,69,93,133,167,202], rain: [14,17,18,39,78,113,136,112,72,36,24,11], tmax: [31.5,31.7,29.7,25.8,22.4,19.5,18.6,19.3,20.7,23.5,26.7,29.5], tmin: [18.2,18.6,17.2,14.1,11.3,9.4,8.9,9.3,10.1,12,14.4,16.5], tminext: [13,13.2,10.9,8.6,5.6,3.7,3.2,3.9,4.8,6.5,9.3,11.2] },
+  "Mandurah": { eto: [200,166,143,94,67,49,50,65,88,126,159,193], rain: [16,12,15,35,85,113,116,93,59,32,22,15], tmax: [29.8,30,28,24.3,21.3,18.7,17.7,18.3,19.5,22.1,25,27.8], tmin: [18.5,18.9,17.7,15,12.7,11,10.4,10.6,11.3,12.9,15,16.9], tminext: [13.7,13.4,12.2,9.9,7.7,6.2,5.8,5.9,6.3,8.1,10.5,12.4] },
+  "Bunbury": { eto: [197,162,137,85,56,41,43,56,77,115,150,186], rain: [11,9,19,47,100,125,148,126,76,37,23,14], tmax: [30.4,30.5,28.1,24.2,21,18.4,17.5,18,19.1,21.7,25,28.1], tmin: [15.5,16.1,14.8,11.7,9.3,7.8,7.4,7.9,8.5,10,12,13.7], tminext: [9,9.3,7.9,5.5,3.3,1.7,1.2,2.2,2.5,4,6.2,7.5] },
+  "Busselton": { eto: [191,158,132,82,54,40,41,55,75,113,147,182], rain: [13,9,21,42,88,114,134,108,71,33,25,9], tmax: [30,30,27.7,23.9,20.7,18.2,17.3,17.8,18.9,21.5,24.8,27.8], tmin: [14.9,15.5,14.5,11.8,9.8,8.5,8,8.3,8.7,9.9,11.6,13.3], tminext: [9,9.3,8.4,6.2,4.7,3.2,2.6,3.2,3.4,4.5,6,7.5] },
+  "Margaret River": { eto: [173,143,119,76,53,40,42,55,74,106,134,164], rain: [16,12,30,66,126,187,200,160,103,58,37,19], tmax: [26.7,27.1,25.5,22.5,19.9,17.6,16.7,17.1,17.9,19.9,22.6,24.9], tmin: [14.9,15.4,14.6,12.5,11,9.8,9.2,9.3,9.6,10.4,11.8,13.4], tminext: [9.6,10.1,9,7,5.9,4.6,3.8,4.7,4.8,5.6,7.1,8.4] },
+  "Augusta": { eto: [160,131,111,75,56,44,46,58,76,105,128,153], rain: [15,12,28,58,110,144,171,135,86,52,33,15], tmax: [24.9,25.3,24.2,22,20,18,17.1,17.3,17.8,19.4,21.5,23.4], tmin: [16,16.5,15.6,13.6,12.1,11.1,10.4,10.4,10.7,11.6,13.1,14.5], tminext: [10.2,10.5,9.4,7.5,6.2,5.6,4.5,5.3,5.7,6.1,7.6,8.8] },
+  "Manjimup": { eto: [175,143,117,72,48,35,36,49,69,103,132,166], rain: [20,15,26,58,98,111,158,126,95,53,41,25], tmax: [28.2,28.3,25.9,22,18.7,16.1,15.2,16,17.4,20.2,23.2,26.1], tmin: [13.3,13.8,13,10.7,8.7,7.2,6.5,6.8,7.3,8.6,10.2,11.7], tminext: [8.2,8.3,7.4,5.8,3.9,2.8,1.6,2,2.5,3.9,5.6,7.1] },
+  "Pemberton": { eto: [162,133,110,70,49,36,38,50,68,99,124,153], rain: [23,20,33,73,124,154,204,189,139,78,57,32], tmax: [27.1,27.4,25.4,22.1,19.3,16.9,16,16.7,17.8,20,22.6,25.1], tmin: [13.8,14.4,13.6,11.5,9.7,8.3,7.5,7.8,8.2,9.5,11,12.4], tminext: [8.6,8.9,8.1,6.5,4.9,3.8,2.7,3.2,3.5,4.9,6.5,7.6] },
+  "Collie": { eto: [197,161,134,82,54,39,41,54,74,113,150,186], rain: [16,14,20,41,98,110,151,134,97,42,25,21], tmax: [31.1,30.8,28.1,23.7,20,17.2,16.3,17.2,18.6,21.8,25.5,28.8], tmin: [13.7,14.1,12.8,9.4,6.7,5,4.7,5.2,6.1,7.8,10.1,11.9], tminext: [6.8,6.8,5.6,3,0.5,-1.1,-1.5,-0.6,0.1,1.7,3.8,5.8] },
+  "Albany": { eto: [142,116,100,68,52,40,43,55,73,99,117,140], rain: [23,19,38,76,79,121,124,119,93,64,51,29], tmax: [23.9,24.1,23.6,21.5,19.6,17.4,16.6,17.2,18.1,19.4,20.9,22.5], tmin: [15.2,16,15.1,12.8,10.8,9.3,8.6,8.7,9.3,10.8,12.4,13.7], tminext: [9.7,10.5,9.7,7.7,5.8,4.8,4,4.2,4.9,5.9,7.4,8.3] },
+  "Denmark": { eto: [147,120,102,68,51,39,41,53,71,98,119,143], rain: [28,21,45,80,101,140,149,144,114,79,56,35], tmax: [25.2,25.4,24.4,21.8,19.5,17.1,16.3,16.9,17.9,19.6,21.6,23.5], tmin: [14.4,15.1,14.4,12.3,10.5,9,8.3,8.4,8.9,10.1,11.6,12.8], tminext: [9.1,10.1,9.1,7.3,5.8,4.8,4.1,4.1,4.5,5.5,7,7.8] },
+  "Mount Barker": { eto: [158,128,107,69,49,36,38,51,71,101,126,153], rain: [23,19,39,62,59,78,83,88,69,56,47,27], tmax: [26,26.1,24.4,21.2,18.5,15.9,14.9,15.7,17.1,19.6,22,24.3], tmin: [13.3,14,13.3,11.2,9.2,7.6,6.9,7.1,7.5,8.9,10.5,11.7], tminext: [8.1,9.1,7.9,6.2,4.5,3.3,2.4,2.6,3,3.9,5.7,6.6] },
+  "Katanning": { eto: [194,158,131,84,57,40,41,54,77,121,156,190], rain: [19,14,25,29,48,56,62,58,46,30,21,19], tmax: [30.3,29.9,27,22.9,19.2,16.1,15,15.9,18,22.1,25.8,28.7], tmin: [13.7,14.3,13.3,10.7,8.2,6.5,5.7,5.9,6.3,8,10.3,11.9], tminext: [8.4,8.5,7.3,5.3,3.3,1.6,0.6,1,1.1,2.3,4.7,6.6] },
+  "Narrogin": { eto: [202,166,138,88,57,40,41,55,80,126,162,197], rain: [16,18,26,26,49,57,71,63,43,26,19,17], tmax: [31.4,31.1,27.9,23.6,19.5,16.3,15.2,16.3,18.6,22.8,26.6,29.7], tmin: [14.8,15.3,13.9,10.8,7.6,5.8,5,5.4,6.1,8.3,11,13.1], tminext: [9.6,9,7.4,4.6,2.2,0.2,-0.4,0.3,0.6,2.3,5,7.5] },
+  "Northam": { eto: [222,182,157,102,70,49,49,63,89,139,178,216], rain: [26,19,23,21,40,50,73,62,39,24,15,9], tmax: [34.7,34.2,31.2,26.5,22.2,18.7,17.6,18.6,21.1,25.5,29.5,32.8], tmin: [17.2,17.4,15.6,11.9,8.2,6,5.3,5.6,6.6,9.3,12.6,15.2], tminext: [11.7,11.4,9,5.6,2.5,0.3,-0.5,0.4,0.9,3,6.6,9.2] },
+  "York": { eto: [218,179,153,98,66,46,45,59,85,135,175,213], rain: [30,20,25,22,46,54,77,62,39,23,16,10], tmax: [34.3,33.8,30.7,26,21.7,18.1,17,18.1,20.6,25.2,29.3,32.5], tmin: [16.4,16.6,14.9,11,7.3,5.2,4.6,4.7,5.6,8.2,11.7,14.3], tminext: [10.9,10.2,8,4.8,1.6,-0.6,-1.4,-0.5,-0.1,1.9,5.4,8] },
+  "Moora": { eto: [220,184,160,108,76,53,52,67,93,140,177,214], rain: [22,19,21,16,38,55,71,62,33,18,12,10], tmax: [34.5,34.3,31.6,27,22.8,19.2,18.1,19.1,21.4,25.5,29.3,32.5], tmin: [17.8,18.4,16.9,13.4,10.4,8.2,7.3,7.6,8.2,10.4,13.3,15.8], tminext: [12.4,12.6,10.8,8.1,5.2,3.6,3,3.1,3.5,5,8,10.2] },
+  "Merredin": { eto: [219,180,154,101,68,47,48,65,95,145,179,215], rain: [21,16,26,19,32,37,44,40,27,22,21,13], tmax: [34.5,34,30.6,25.9,21.4,17.7,16.7,18.3,21.4,26.1,29.6,32.9], tmin: [17.8,18.2,16.4,12.6,8.5,6.3,5.4,5.7,6.7,10.2,13.5,15.8], tminext: [12.3,11.4,9.5,5.8,2.5,0.3,-0.6,-0.1,0.5,3.4,7.2,9.7] },
+  "Dalwallinu": { eto: [226,189,165,112,77,53,53,68,100,153,188,223], rain: [26,21,29,16,31,39,55,46,25,15,19,11], tmax: [35.4,35.1,31.7,26.9,22.3,18.5,17.4,18.7,21.8,26.7,30.4,33.7], tmin: [18.3,18.7,17,13.2,9.6,7.2,6.3,6.6,7.4,10.1,13.4,16.1], tminext: [12.7,12.7,10.8,7.3,4.6,2.5,1.9,2.1,2.2,4.5,7.9,10.1] },
+  "Geraldton": { eto: [206,176,166,121,95,69,68,82,109,149,177,205], rain: [7,12,14,21,42,73,73,56,26,18,9,4], tmax: [32.3,32.8,31.9,28.6,25.5,21.9,20.7,21.4,23.3,25.8,28.4,30.9], tmin: [19.6,20.1,19.2,16,13.2,11.1,9.8,9.8,10.3,12.5,15.2,17.7], tminext: [14.4,14.3,13.5,10.7,7.9,5.8,4.4,5.1,5.4,7.2,9.7,12.3] },
+  "Kalgoorlie": { eto: [219,177,153,110,79,55,61,86,120,167,189,222], rain: [37,33,30,14,12,22,20,21,10,16,25,15], tmax: [34,32.9,29.4,25.8,21.5,17.8,17.6,19.9,23.1,27.3,29.8,32.8], tmin: [18.8,18.7,16.7,13.2,9,6.7,5.6,6.8,8.8,12.4,14.9,17.2], tminext: [13.4,12.8,10.5,6.6,3.2,1,0.1,0.9,2.5,6,8.6,11.1] },
+  "Esperance": { eto: [163,135,118,85,63,48,51,67,89,120,140,164], rain: [30,21,28,44,64,78,93,100,60,49,34,20], tmax: [26.5,26.9,25.7,23.7,20.9,18.4,17.7,18.7,20.2,22.1,23.7,25.4], tmin: [16,16.3,15.5,13.3,11,9.3,8.5,8.7,9.5,11.2,12.9,14.4], tminext: [11.2,11.5,9.9,8.1,6.8,5.1,4.5,4.8,5.4,6.2,8,9.5] },
+  "Carnarvon": { eto: [208,176,178,137,112,83,87,109,136,170,186,207], rain: [8,25,16,16,21,44,23,11,8,3,2,14], tmax: [32.3,32.8,32.9,30.2,27.6,24.2,23.4,24.5,25.8,27.2,28.9,30.9], tmin: [23.1,23.6,22.8,19.2,14.7,11.9,10.6,11.8,14,16.9,19.1,21.3], tminext: [19.9,19.7,18.5,14,9.4,6.5,5.6,6.8,9.5,12.6,15.1,17.5] },
+  "Exmouth": { eto: [227,196,194,152,121,90,99,127,159,201,212,233], rain: [16,28,47,29,43,62,18,5,2,0,1,3], tmax: [36.8,36.9,36.3,33.2,28.9,25,24.8,27,29.7,32.8,34,36.2], tmin: [24,24.5,24.3,21.4,17.1,14.5,12.9,13.7,15.4,18,19.7,22.1], tminext: [20.6,21.3,20.8,17.1,12.6,9.1,8.1,9.4,11.7,14.1,16,18.3] },
+  "Karratha": { eto: [219,192,196,167,136,108,122,149,177,219,225,235], rain: [63,79,47,16,44,41,12,3,2,1,2,15], tmax: [36.5,36.7,36.5,34.8,30.4,26.7,26.9,29,31.9,35.1,35.9,36.9], tmin: [26.7,26.8,26.2,23.1,18.2,15.3,13.8,14.6,17.2,20.9,23.1,25.5], tminext: [23.3,23.9,22.7,18.6,13.5,10.3,9.5,10.3,13.2,16.4,19.3,21.6] },
+  "Port Hedland": { eto: [210,187,194,172,145,118,129,157,183,221,224,229], rain: [68,61,92,14,21,25,10,2,3,1,2,19], tmax: [36.4,36.5,36.6,35.4,31.4,27.7,28,30.1,33.1,36,36.5,37], tmin: [26.5,26.3,25.8,22.9,18.3,15.2,13.9,14.4,17.1,20.6,23.1,25.5], tminext: [23.6,23.4,22.4,18.1,13.3,10.1,9.1,10.3,13.2,15.9,19.2,21.8] },
+  "Newman": { eto: [237,206,198,159,125,94,106,140,176,222,236,254], rain: [91,49,51,18,14,19,14,3,9,8,20,30], tmax: [39.3,38.5,36.2,32.5,27.2,23.1,23.4,26.7,30.8,35.4,37.7,39.7], tmin: [25.4,24.6,22.9,18.5,12.3,8.5,7.2,9,13.4,18.5,21.6,24.6], tminext: [19.9,20.2,17.7,12.2,6,2.5,1.9,3.1,7.6,12.1,15.7,19.1] },
+  "Broome": { eto: [169,158,171,166,151,129,139,161,177,200,204,196], rain: [282,160,99,22,21,19,6,4,2,2,15,105], tmax: [33.1,33.3,34,34.5,32.1,29.4,29.4,31,32.7,33.7,34.4,34.4], tmin: [26.6,26.5,26.1,23.7,19.1,16.3,15.3,15.8,19.7,23.6,26.2,27.1], tminext: [22.9,22.6,22.7,18.1,13.7,11.4,10.3,10.8,14.9,18.5,22.3,23.3] },
+  "Kununurra": { eto: [175,163,177,174,162,142,156,181,200,225,215,199], rain: [267,222,149,35,7,6,1,0,7,23,56,172], tmax: [35.4,35.5,35.7,35.6,32.9,30.5,30.9,33.3,37.1,39,39.2,37.6], tmin: [25.1,24.8,24.4,21.5,17.8,15.2,14.2,15.1,19.7,23.3,25.2,25.6], tminext: [22.2,22.2,21.2,16.3,12,9.4,8.7,9.4,13.7,17.9,21.3,22.3] },
+  "Adelaide": { eto: [197,156,135,90,57,40,43,60,89,132,158,185], rain: [25,18,22,38,58,72,68,61,44,34,33,27], tmax: [30,28.8,26.8,23,18.9,16,15.3,16.6,19.4,22.7,25.6,27.7], tmin: [17.1,16.5,15.3,12.5,10.1,7.9,7.5,7.9,9.2,11.2,13.5,15.1], tminext: [12.1,11.5,9.9,7.6,4.8,2.9,2.3,2.9,4.2,5.6,7.7,9.3] },
+  "Mount Gambier": { eto: [158,122,101,61,38,27,30,44,64,95,118,145], rain: [28,30,31,50,76,90,100,101,69,52,42,38], tmax: [26.3,25.5,23.8,20.1,16.5,14.2,13.7,14.8,16.5,19,21.7,23.8], tmin: [12.6,12.6,11.5,9.5,8.1,6.1,5.8,6.4,7.1,7.9,9.7,10.8], tminext: [6.6,6.5,5.3,3.6,1.8,0.2,0.3,1.2,1.3,2.1,3.8,4.9] },
+  "Port Lincoln": { eto: [162,128,111,76,52,38,41,54,78,112,132,158], rain: [20,21,19,33,49,81,70,67,49,31,28,23], tmax: [25.9,25.1,24.1,21.9,19,16.4,15.7,16.5,18.4,20.7,22.7,24.6], tmin: [16.1,16,15.1,13,10.9,9,8.2,8.1,9,10.6,12.6,14.3], tminext: [12.2,12.4,10.5,8.5,6.9,4.9,4.4,4.1,4.6,5.6,7.7,9.6] },
+  "Renmark": { eto: [218,175,149,96,62,41,48,69,103,147,174,209], rain: [23,14,14,22,20,20,20,20,25,24,31,25], tmax: [34,32.5,29.6,24.6,20.1,16.7,16.7,18.7,22.3,25.9,29,31.7], tmin: [16.9,15.8,13.7,9.7,6.7,4.6,4.1,4.9,6.8,9.6,12.7,14.7], tminext: [10.5,9.9,6.9,3,0,-2.6,-3.2,-2,0.2,3.1,6,8.5] },
+  "Whyalla": { eto: [200,163,141,96,63,43,49,70,106,145,168,194], rain: [29,16,16,20,19,31,18,19,19,20,26,29], tmax: [31.4,30.2,28.2,24.7,20.5,17.2,17.2,19.1,22.4,25.2,27.6,29.6], tmin: [18.4,17.6,15.9,12.2,8.8,6.4,5.4,6,8.2,11.2,14.1,16.2], tminext: [13.4,12.6,10.1,6.8,3,0.6,-0.1,0.7,2.6,4.9,8,10.5] },
+  "Port Augusta": { eto: [221,181,159,110,70,48,54,78,117,160,183,213], rain: [20,19,14,24,19,26,19,15,19,20,27,28], tmax: [34.4,33.1,30.7,26.5,21.5,18,17.9,20.3,24.1,27.4,30,32.3], tmin: [19.7,18.7,16.8,12.7,8.6,5.9,4.8,5.7,8.5,12.1,15.2,17.3], tminext: [14.1,13.1,10.3,6.7,2.7,0.2,-0.9,0,2.7,5.7,9.1,11.6] },
+  "Darwin": { eto: [135,134,150,153,155,142,150,164,172,185,168,153], rain: [469,348,252,103,14,1,0,1,22,58,138,279], tmax: [32.1,32.2,32.7,33.3,32.7,31.4,31.4,32.5,33.7,34.3,34.1,33.4], tmin: [25.2,25.1,25.1,24.1,21.9,19.7,18.8,19.4,22.5,24.7,25.3,25.6], tminext: [22.6,22.6,22.8,20.7,18.3,14.4,13.9,15.2,19.2,22.1,22.4,23.1] },
+  "Katherine": { eto: [171,158,173,164,153,136,148,172,193,218,205,190], rain: [245,214,169,45,2,2,0,0,8,16,97,215], tmax: [34.6,34.6,34.9,34.6,32.6,30.7,31,33,36.6,38.4,38.1,36.3], tmin: [24.5,24.1,23.5,20.9,17.3,14.5,13.7,14.8,19.9,23.7,25,24.8], tminext: [22.1,21.4,20.2,15.8,11.3,8,7.7,9.2,13.6,18.2,21.2,21.9] },
+  "Tennant Creek": { eto: [211,193,194,172,140,116,127,158,188,223,222,225], rain: [154,92,59,13,6,8,10,3,8,20,46,88], tmax: [36.6,36.2,35.2,32.7,28,24.9,25.2,28.1,32.6,35.9,37.2,37.6], tmin: [25,24.3,23.5,20.6,16,12.7,12.2,14,18.5,22,24,25.1], tminext: [21.3,20.8,18.8,15.8,10.4,7.8,7.4,8.8,12.9,16.3,18.8,19.8] },
+  "Alice Springs": { eto: [228,203,189,146,106,80,92,126,161,204,210,226], rain: [54,28,31,14,12,10,14,3,9,13,44,34], tmax: [36.8,36,33.5,29.1,23.6,19.9,20.6,23.8,28.5,32.4,34.1,35.9], tmin: [22.4,20.6,18.5,12.9,7.6,4.3,3.8,5.6,10.8,15.1,18.2,20.7], tminext: [16.4,14,11.2,6.5,1.5,-1.2,-1.9,-0.3,3.6,7.3,11.1,13.1] },
+  "Brisbane": { eto: [161,137,126,102,82,65,74,95,115,141,154,164], rain: [160,186,138,66,76,63,35,36,36,93,101,130], tmax: [30,29.9,28.8,26.8,24.1,21.7,21.5,23.2,25.2,26.7,28.1,29.4], tmin: [21.5,21.2,19.9,16.7,13.2,11.1,9.8,10.2,13.2,16,18.6,20.3], tminext: [18.1,18.2,16.2,12.3,7.9,5.7,4.8,5.6,8.5,10.9,13.6,16] },
+  "Gold Coast": { eto: [159,133,124,99,78,62,70,91,111,136,147,159], rain: [186,195,189,119,97,111,65,49,45,87,96,155], tmax: [29.3,29.1,28.3,26.3,23.8,21.5,21.3,22.7,24.4,25.9,27.3,28.5], tmin: [21.5,21.4,20.4,17.5,14.3,12,10.9,11.4,14.1,16.5,18.6,20.3], tminext: [18.4,18.9,16.8,13.2,8.7,6,5.3,6,9.2,11.4,14.1,16.3] },
+  "Sunshine Coast": { eto: [154,129,120,97,77,62,70,90,111,135,148,156], rain: [181,230,224,141,153,122,76,65,63,104,87,156], tmax: [29.3,29.1,28.1,26.3,23.8,21.6,21.4,22.9,24.6,26.1,27.6,28.7], tmin: [21.5,21.4,20.4,17.4,14.1,11.9,10.8,11.1,13.8,16.3,18.4,20.2], tminext: [18.1,18.5,16.4,13,8,5.7,5.6,6.4,9.1,11,13.3,16] },
+  "Toowoomba": { eto: [162,135,122,93,68,50,57,81,108,139,154,165], rain: [118,109,104,36,52,41,30,30,34,79,80,117], tmax: [28.8,28.1,26.4,23.6,20.2,17.3,17.1,19.5,22.6,25.1,27.1,28.1], tmin: [17.7,17.3,16.2,12.3,8.2,6,4.8,5,8.5,12,14.6,16.4], tminext: [13.8,13.9,10.9,5.3,0.1,-1.4,-2.5,-2.3,1.6,5.2,8.7,11.1] },
+  "Bundaberg": { eto: [169,142,135,109,89,71,79,99,122,149,162,173], rain: [161,161,132,50,59,58,34,30,28,91,94,132], tmax: [30.9,30.8,29.9,28,25.3,23,22.8,24.2,26.3,27.8,29.3,30.4], tmin: [22.1,22,21,18.2,14.8,12.5,11.4,11.9,14.6,17.3,19.4,21.2], tminext: [19.3,19.5,18.1,14.3,9.1,6.7,5.8,6.5,9.9,12.5,15.1,18] },
+  "Rockhampton": { eto: [176,152,144,119,98,78,85,106,131,162,173,185], rain: [118,135,121,37,35,40,44,28,25,46,62,97], tmax: [32.2,31.9,30.9,28.9,26.2,23.9,23.6,25.3,27.8,29.7,31.1,32.2], tmin: [23,22.8,21.8,18.9,14.8,12.2,11.1,11.8,15,18.1,20.3,22.1], tminext: [20.2,20.5,18.4,14.5,7.9,5.2,4.3,5.3,9.9,12.5,15.9,18.9] },
+  "Roma": { eto: [205,170,158,120,88,65,73,104,136,176,190,205], rain: [53,78,74,20,21,30,19,19,33,39,67,77], tmax: [34.8,33.6,31.8,28.3,23.9,20.6,20.5,23.4,27,30.5,32.7,33.9], tmin: [21.3,20,18,12.5,7.5,5.1,4,5,9.5,13.9,17.5,19.5], tminext: [15.8,14.9,11,5.2,0.1,-2.3,-2.8,-2.1,1.9,6,9.5,12] },
+  "Emerald": { eto: [190,165,161,130,106,82,90,118,145,182,190,202], rain: [86,96,63,30,21,34,28,15,25,45,63,85], tmax: [34.4,34,32.8,30.1,26.5,23.5,23.5,26,29.2,32.3,33.6,34.6], tmin: [22.3,21.9,20.6,16.8,12.6,10.2,9,9.8,13.4,16.9,19.5,21.3], tminext: [19.2,19,16.9,12.6,6.8,4,3.3,3.9,8.4,11.5,14.7,17.6] },
+  "Charleville": { eto: [221,184,173,132,97,70,79,112,145,189,202,222], rain: [80,51,66,16,21,32,20,19,28,25,53,67], tmax: [36.2,35,32.9,29.1,24.2,20.6,20.6,23.6,27.6,31.5,33.7,35.4], tmin: [23.1,21.6,19.6,14.3,9,6.2,5.2,6.4,11,15.5,19,21.4], tminext: [17.7,15.9,12.8,7.2,1.8,-0.7,-1,-0.2,4.2,7.4,11.1,13.9] },
+  "Mount Isa": { eto: [205,187,189,165,134,108,120,151,182,220,220,231], rain: [128,101,76,12,7,14,9,1,11,15,46,65], tmax: [36.6,35.9,34.9,32.6,28.2,25.1,25.2,28,32.3,35.7,37.2,38.2], tmin: [24.2,23.1,22.2,18.8,14.2,10.6,9.8,11.1,15.5,19.7,22.2,24], tminext: [20.4,18.8,17.2,13.2,7.7,4.5,3.7,5,9,13.1,16.1,18.6] },
+  "Mackay": { eto: [160,136,133,108,90,73,79,98,123,156,166,174], rain: [288,327,297,140,91,52,50,23,29,30,91,184], tmax: [30.8,30.5,29.7,27.8,25.2,23.2,22.7,24,26.4,28.7,30.1,31.1], tmin: [23.7,23.6,22.7,20.2,16.7,14.2,12.9,13.4,16.3,19.2,21.3,22.9], tminext: [20.5,21.2,19.4,16.2,10.3,7.4,6.3,7.2,11.5,13.8,17.1,19.6] },
+  "Townsville": { eto: [163,146,148,128,110,92,99,118,140,171,177,183], rain: [298,319,212,67,34,23,27,17,10,18,68,135], tmax: [31.5,31.6,31,29.8,27.6,25.6,25.2,26.2,28.1,29.7,30.9,31.8], tmin: [24.6,24.5,23.7,21.3,18.1,15.8,14.8,15.2,18.3,21.1,23.1,24.5], tminext: [21.9,22.2,20.8,17.4,12.4,9.8,8.4,9.3,13.6,16.7,19.5,21.8] },
+  "Cairns": { eto: [147,134,135,118,105,91,98,117,135,158,160,164], rain: [476,414,445,235,102,54,58,29,35,77,77,236], tmax: [31.7,31.7,30.8,29.6,27.6,26.3,25.8,26.9,28.6,30.1,31.4,32.1], tmin: [24,24,23.5,22,20.1,18.5,17.4,17.3,18.9,20.7,22.3,23.5], tminext: [21.5,21.9,20.4,18.5,15.7,13.4,11.6,11.6,14.5,17.1,19.2,20.7] },
+  "Innisfail": { eto: [147,130,126,106,90,76,82,101,123,150,156,160], rain: [559,528,612,373,319,186,213,120,87,119,144,303], tmax: [31.2,31.2,30.1,28.6,26.4,24.8,24.2,25.3,27.1,28.8,30.2,31.2], tmin: [23.5,23.5,23,21.4,19.3,17.6,16.4,16.4,18.1,19.8,21.5,22.9], tminext: [21,21.3,20.2,18,14.5,12.4,10.7,10.9,14,16.3,18.4,20.1] },
+  "Sydney": { eto: [150,119,107,81,65,47,57,76,100,124,132,152], rain: [99,148,161,125,74,168,87,62,60,75,94,75], tmax: [27.4,26.8,25.8,23.5,20.8,17.9,17.9,19.3,21.7,23.5,24.6,26.2], tmin: [19.8,19.5,18.2,15,11.5,9.6,8.5,9.3,11.7,14.2,16.6,18.1], tminext: [15.5,15.8,13.5,10.6,7.4,5.7,5,5.6,7.5,9.4,12,13.6] },
+  "Newcastle": { eto: [153,122,109,79,62,45,54,74,97,122,131,152], rain: [75,122,126,132,102,154,75,51,62,75,86,54], tmax: [27.4,26.8,25.8,23.5,20.8,18,17.9,19.3,21.7,23.5,24.7,26.3], tmin: [19.7,19.6,18.3,15,11.7,9.9,8.8,9.2,11.6,14.1,16.5,18.1], tminext: [15.4,15.5,13.3,10.3,6.8,5.3,4.7,5.1,7,8.8,11.2,13] },
+  "Wollongong": { eto: [141,110,100,77,62,46,55,73,95,117,124,142], rain: [96,148,155,103,63,117,77,64,60,77,106,80], tmax: [26.3,25.6,24.8,22.7,20.2,17.6,17.5,18.6,20.9,22.5,23.7,25.2], tmin: [18.7,18.4,17.3,14.3,11.2,9.5,8.3,8.8,10.8,13.1,15.3,16.9], tminext: [14.5,14.8,12.8,9.8,6.6,4.5,3.6,4.5,6.2,8.1,11,12.7] },
+  "Coffs Harbour": { eto: [148,120,109,86,67,52,61,81,102,124,134,146], rain: [209,275,234,173,106,148,65,79,78,140,159,157], tmax: [28,27.7,26.6,24.6,22.1,19.9,19.7,21.1,23.2,24.6,25.9,27.2], tmin: [19.8,19.6,18.3,15.2,11.4,9.2,7.8,8.4,11.3,14.2,16.8,18.4], tminext: [16,16.2,14,9.7,5.1,2.6,2.1,2.6,5.7,8.1,11.2,13.2] },
+  "Lismore": { eto: [151,123,112,87,67,54,63,84,107,132,143,154], rain: [161,175,211,117,86,112,48,66,58,92,109,136], tmax: [29.8,29.2,27.9,25.6,22.8,20.5,20.5,22.5,24.9,26.6,28.1,29.2], tmin: [19.4,19.3,18.1,15,11.5,9.3,8.1,8.6,11.4,14.1,16.4,18.2], tminext: [15.5,16,14.2,10.8,6.3,3.7,2.9,3.4,6.6,8.5,11.8,13.5] },
+  "Tamworth": { eto: [193,155,135,94,65,44,50,72,101,140,159,184], rain: [64,71,65,29,30,63,40,40,49,52,88,87], tmax: [32.5,31.1,28.7,24.7,20.3,16.6,16.2,18.4,22.1,25.7,28.5,30.6], tmin: [17.2,16.3,14.2,9.5,5,3.4,2.1,2.5,5.6,9.3,13,15.1], tminext: [11.9,10.9,7.3,3.2,-2.2,-3,-4.3,-3.1,-0.4,2.6,6.8,8.2] },
+  "Dubbo": { eto: [209,165,143,96,64,42,47,67,101,143,168,200], rain: [61,48,69,42,31,55,42,34,43,47,62,72], tmax: [34.1,32.4,29.7,25.1,20.4,16.6,16,18,22.1,26,29.4,31.9], tmin: [19,17.8,15.5,10.7,6.3,4.5,3.3,3.4,6,10,14.1,16.3], tminext: [12.4,11.7,8.1,3.9,-0.5,-1.8,-2.7,-1.9,0.1,2.8,6.7,9.1] },
+  "Wagga Wagga": { eto: [209,164,139,87,53,34,36,52,83,130,160,198], rain: [52,43,51,35,36,48,45,42,39,44,67,54], tmax: [33.6,31.7,28.7,23.6,18.4,14.7,13.8,15.5,19.4,24.1,27.9,30.7], tmin: [17.8,16.7,14.1,9.3,5.4,3.8,3.2,3.3,4.9,8.3,12.6,14.8], tminext: [10,9.3,6.7,2.6,-0.4,-2,-2.7,-2.3,-1.1,1.1,4.8,7.5] },
+  "Albury": { eto: [201,158,132,79,46,30,32,48,75,119,152,188], rain: [66,49,58,45,49,63,68,65,55,55,75,45], tmax: [32.8,31,28.1,22.8,17.7,14.2,13.4,15.1,18.5,22.7,26.9,29.8], tmin: [17,16,13.4,8.9,5.4,3.6,3.4,3.8,5.5,8.3,12.2,14.3], tminext: [10.4,9.6,7,3.3,0.1,-1.4,-1.5,-1,0.3,2.4,5.6,7.9] },
+  "Orange": { eto: [170,132,109,70,43,28,32,48,76,111,132,163], rain: [73,71,88,53,48,80,72,70,66,55,94,89], tmax: [28.1,26.3,23.5,19.2,14.6,11.2,10.4,12,15.6,19.5,22.8,25.6], tmin: [14.2,13.1,11.1,6.8,3.4,2.1,1.4,1.6,3.6,6.5,9.7,11.6], tminext: [7.7,7.1,4.6,1.1,-1.7,-3.5,-4.1,-3.1,-2.1,0,2.4,4.7] },
+  "Griffith": { eto: [218,173,147,94,57,36,40,59,95,143,173,209], rain: [38,29,38,30,31,39,29,28,29,39,48,34], tmax: [34.5,32.7,29.5,24.4,19.4,15.6,15.2,17.1,21.3,25.6,29.1,31.8], tmin: [18.9,17.6,15.1,10.6,6.6,4.6,3.7,4.1,6.2,10,13.9,16.1], tminext: [11.5,10.6,7.4,4.1,0.6,-1.5,-1.9,-1.7,0,3,6.4,8.5] },
+  "Broken Hill": { eto: [226,185,157,107,68,46,53,79,116,160,185,222], rain: [41,25,32,21,18,24,18,15,20,21,30,19], tmax: [34.6,32.8,29.4,24.5,19.4,15.7,15.8,18.3,22.4,26.2,29.4,32.4], tmin: [20,18.5,15.9,11.7,7.8,5.5,4.8,5.8,8.5,11.9,15.1,17.6], tminext: [12.6,11.7,8.8,6,2.2,0.1,-0.3,0.5,2.8,5.1,7.7,9.9] },
+  "Canberra": { eto: [177,135,115,74,49,32,37,54,81,117,140,169], rain: [58,66,60,37,33,52,39,46,54,52,81,73], tmax: [29.9,27.8,25.2,20.9,16.5,13.1,12.5,14.2,17.8,21.4,24.7,27.3], tmin: [14.6,13.7,11.4,6.9,2.7,1.5,0.4,1.3,3.5,6.6,10.2,12.2], tminext: [8.2,7.4,4.3,0.5,-3.3,-4.7,-5.2,-4.4,-2.8,0,3.3,5.5] },
+  "Melbourne": { eto: [166,131,112,71,47,33,38,54,78,110,130,159], rain: [45,42,38,55,46,42,42,44,45,53,63,55], tmax: [27.4,26.5,24.9,21.1,17.4,14.7,14.3,15.6,18.2,20.8,23.2,25.4], tmin: [15.8,15.4,14,11.2,9,7.1,6.8,7.3,8.5,9.8,12.2,13.6], tminext: [10.3,10.3,8.6,5.5,3.2,1.6,0.8,1.7,2.7,3.8,6.8,8.5] },
+  "Geelong": { eto: [155,120,103,63,42,28,33,48,69,101,119,149], rain: [42,31,24,40,39,45,41,42,44,50,54,34], tmax: [26.2,25.3,24.1,20.6,17.2,14.5,14.2,15.3,17.5,20,22.2,24.4], tmin: [14.4,14.4,13.1,10.5,8.4,6.4,6.1,6.5,7.5,8.8,11,12.2], tminext: [9.2,9.3,8,4.9,3,1,0.1,1.4,2.2,3.4,5.7,7.1] },
+  "Ballarat": { eto: [164,128,105,59,33,21,25,38,60,94,120,151], rain: [47,38,38,48,62,66,70,73,65,64,64,47], tmax: [26.7,25.6,23.1,18.4,14.1,11.2,10.6,11.9,14.5,17.8,21.1,24], tmin: [12.4,12,10.7,8,5.6,3.9,3.5,3.8,4.9,6.4,8.8,10.1], tminext: [6,5.8,4.3,2.1,0.1,-1.3,-1.9,-1.4,-0.5,0.3,2.5,3.9] },
+  "Bendigo": { eto: [195,155,128,76,43,28,30,46,74,118,149,183], rain: [45,27,37,45,43,50,55,54,47,48,49,37], tmax: [30.9,29.6,26.5,21.4,16.7,13.5,12.8,14.4,17.6,21.6,25.4,28.2], tmin: [14.8,14.2,12.2,8.6,5.5,3.7,3.2,3.4,4.8,7.4,10.6,12.4], tminext: [7.9,7.9,5.4,2.5,-0.1,-1.8,-2.2,-2.1,-1,1.1,3.6,5.7] },
+  "Shepparton": { eto: [201,159,132,78,45,29,32,46,75,120,154,190], rain: [41,35,39,38,35,45,39,41,32,38,45,37], tmax: [32.1,30.6,27.5,22.5,17.6,14.2,13.5,15.1,18.5,22.7,26.6,29.4], tmin: [15.8,15,12.9,8.9,5.6,3.7,3.5,3.8,5.3,7.9,11.4,13.4], tminext: [9.3,8.9,6.6,3.1,0,-2,-2.3,-1.8,-0.5,1.5,5,7.4] },
+  "Mildura": { eto: [220,178,151,97,61,41,48,69,104,149,176,212], rain: [28,19,19,23,21,20,18,18,22,27,38,26], tmax: [34.3,32.8,29.6,24.5,19.7,16.3,16.2,18.4,22.1,25.8,29,31.8], tmin: [18.1,16.8,14.5,10.5,7.3,5.1,4.4,5.4,7.5,10.4,13.7,15.7], tminext: [11.1,10.5,8,4.6,1.5,-0.8,-1.1,-0.2,1.9,4.1,6.7,8.9] },
+  "Warrnambool": { eto: [143,113,95,59,38,27,31,44,61,90,110,137], rain: [40,28,40,58,81,77,94,88,72,67,48,50], tmax: [24.5,23.9,22.9,19.9,16.7,14.4,13.9,14.9,16.4,18.5,20.6,22.6], tmin: [13.1,13.3,12.1,10.1,8.4,6.5,6.2,6.7,7.5,8.5,10.3,11.4], tminext: [7.2,7.7,6.3,3.9,2.6,1.2,0.6,1.7,2.4,2.8,4.7,5.8] },
+  "Traralgon": { eto: [155,119,102,60,40,28,33,46,66,97,118,144], rain: [46,44,47,51,47,60,56,68,61,67,66,56], tmax: [27.5,26.5,24.8,20.7,17,14.3,14,15.2,17.6,20.1,22.9,25], tmin: [13.7,13.3,11.9,9.2,6.6,4.4,4.3,4.8,6.2,7.8,10.2,11.8], tminext: [6.4,6.8,5.3,2.8,0.3,-0.6,-1.6,-0.8,0.3,2.1,4.3,5.2] },
+  "Hobart": { eto: [143,107,88,58,39,27,32,45,66,93,111,136], rain: [39,36,38,36,45,47,42,57,53,58,50,56], tmax: [23,22.1,20.8,18,15.1,12.7,12.5,13.6,15.6,17.4,19.2,21.1], tmin: [12.5,12,10.9,8.8,6.9,5,4.6,5.2,6.4,7.6,9.4,10.9], tminext: [7.2,6.9,5.7,3.7,2,0.8,0.5,0.7,1.7,2.4,4.2,6.1] },
+  "Launceston": { eto: [153,118,95,54,34,24,26,37,58,90,117,143], rain: [35,34,47,50,60,69,80,87,61,51,54,51], tmax: [25.1,24.5,22.7,18.8,15.5,13,12.6,13.7,15.6,18,20.7,22.7], tmin: [12.3,12.1,10.4,7.5,5,3,2.9,3.8,5.1,6.6,9,10.5], tminext: [6.5,6,3.9,1.2,-1,-2.3,-2.3,-1.5,-0.3,0.9,2.3,4.8] },
+  "Devonport": { eto: [139,109,87,52,33,24,26,36,55,85,109,131], rain: [48,37,53,64,74,82,102,104,78,69,60,57], tmax: [22.4,22.1,20.7,17.9,15.3,13.4,12.8,13.2,14.5,16.3,18.5,20.2], tmin: [12.8,12.8,11.5,9.1,7,5.2,4.9,5.4,6.3,7.6,9.7,11], tminext: [7.1,7,5.3,3.3,1.6,0.4,0.1,0.5,1.1,2.3,3.9,5.7] },
+  "Burnie": { eto: [133,104,82,50,31,24,25,35,52,83,106,125], rain: [48,37,64,58,79,91,115,122,86,81,66,64], tmax: [21.7,21.4,19.9,17.3,14.9,13.2,12.5,12.9,14.1,15.9,18.1,19.5], tmin: [12.9,12.9,11.8,9.6,7.6,6,5.6,5.8,6.6,7.8,9.9,11.1], tminext: [7.2,7.1,5.9,4.3,2.4,1.4,0.9,0.8,1.5,2.8,4.4,6] }
+};
+
 // Selecting a town pins coordinates and pre-fills zone + rainfall (still editable).
 function selectTown(name){
-  if(name === "Other"){ state.town = "Other"; }
-  else {
+  if(name === "Other"){
+    state.town = "Other";
+    // A custom point has no baked climate: fall back to the bundled normal for
+    // irrigation, and skip temperature suitability (no monthly temps to test against).
+    state.climateEto = null; state.climateRain = null;
+    state.climateTmax = null; state.climateTmin = null; state.climateTminext = null;
+    state.climateLabel = "bundled Perth fallback";
+  } else {
     const t = TOWNS.find(x => x.n === name);
-    if(t){ state.town = t.n; state.lat = t.lat; state.lon = t.lon; state.climateZone = t.z; state.annualRainfall = t.r; }
+    if(t){
+      state.town = t.n; state.lat = t.lat; state.lon = t.lon; state.climateZone = t.z;
+      const c = CLIMATE_DB[t.n];
+      if(c){
+        state.climateEto = c.eto; state.climateRain = c.rain;
+        state.climateTmax = c.tmax; state.climateTmin = c.tmin; state.climateTminext = c.tminext;
+        state.climateLabel = t.n + " - SILO 2005-2024";
+        // Actual SILO 2005-2024 annual rainfall — replaces the town-list estimate.
+        state.annualRainfall = Math.round(c.rain.reduce((a,b) => a + b, 0));
+      } else {
+        state.annualRainfall = t.r;   // fallback estimate only if no baked climate exists
+      }
+    }
   }
   state.checkedCrops = null; state.plan = null; renderApp();
 }
@@ -1607,6 +1711,15 @@ function splitADG(a){
   };
 }
 const FERTILITY_MULT={low:0.55,medium:0.75,high:0.95};
+
+// Water-efficiency steer strength — Balanced mode + "limited" scheme/bore water only.
+// 0 = off. It scales the fresh gap-fill score and the starch land-efficiency key by
+// ±(W) around neutral, so a thrifty crop gets up to +W and a thirsty one −W on its
+// selection key. Gentle: a thirsty crop that UNIQUELY fills a seasonal gap still wins;
+// between crops covering similar months, the water-thrifty one wins. Tune against the
+// rendered Darlington plan — raise it if thirsty perennials/grains still dominate, lower
+// it if seasonal variety suffers.
+const WATER_STEER_W = 0.15;
 const STORABILITY_RANK={"Long Storage":5,"Medium Storage":4,"Year-round Proc.":3,"Short Storage":2,"Fresh Only":1};
 // Food-group display tag classes, keyed by the crops.json food_group strings (13-group taxonomy).
 const FG_TAG={"Dark Green Vegetables":"tag-darkgreen","Red/Orange Vegetables":"tag-redorange","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
@@ -1695,6 +1808,7 @@ function getCropPlantType(crop){
   return "Perennial herb/groundcover";
 }
 function getSoilSuitability(crop,soil){
+  if(soil==="wide") return "Ideal";  // variable soil: crop can be sited on its preferred texture
   if((crop.text_opt||[]).includes(soil)) return "Ideal";
   if((crop.text_tol||[]).includes(soil)||(crop.text_tol||[]).includes("wide")) return "Suitable";
   return "Unsuitable";
@@ -1971,13 +2085,18 @@ let state={
   labourSystem:"hand",
   climateZone:"Cs",         // Köppen CLIZ code (one of 12)
   town:"Darlington (Perth Hills)", // default trial site; pins lat/lon, pre-fills zone + rainfall
-  lat:-31.90, lon:116.10,   // coordinates for SILO DataDrill climate lookup
-  siloEmail:"",             // email for live SILO fetch (blank = fetch disabled, bundled climate used)
-  climateEto:null,          // 12 monthly ETo (mm) from a live SILO fetch; null → bundled PERTH_ETO
-  climateRain:null,         // 12 monthly rainfall (mm) from a live SILO fetch; null → bundled PERTH_RAIN
-  climateLabel:"",          // label of the active live climate source
+  lat:-31.90, lon:116.10,   // coordinates (SILO grid point used when the climate table was built)
+  // Active climate for the selected location, set from CLIMATE_DB by selectTown.
+  // Defaults to the trial site. Five 12-month vectors: ETo, rain, daily-mean tmax/tmin,
+  // and tminext (mean coldest night) — the last three drive temperature suitability.
+  climateEto:     CLIMATE_DB["Darlington (Perth Hills)"].eto,
+  climateRain:    CLIMATE_DB["Darlington (Perth Hills)"].rain,
+  climateTmax:    CLIMATE_DB["Darlington (Perth Hills)"].tmax,
+  climateTmin:    CLIMATE_DB["Darlington (Perth Hills)"].tmin,
+  climateTminext: CLIMATE_DB["Darlington (Perth Hills)"].tminext,
+  climateLabel:   "Darlington (Perth Hills) - SILO 2005-2024",
   soilTexture:"heavy",      // TEXTR code: light/medium/heavy/organic/wide
-  annualRainfall:1100,       // mm/yr (Darlington Hills default)
+  annualRainfall:852,        // mm/yr — Darlington SILO 2005-2024 actual (default site)
   fertility:"medium",
   annualHa:0.05,
   perennialHa:0.2,
@@ -1988,6 +2107,7 @@ let state={
     minimiseLabour:"off",
     maximiseYield:"off",
     minimiseSpace:"off",
+    minimiseWater:"off",
     nutrientLP:"off",
   },
   // crop selection
@@ -2013,18 +2133,50 @@ let state={
   irrigationDam: false,      // true = size a storage dam from irrigation demand (hides manual surfaceWaterHa)
   damDepth: 3,               // m — average usable dam depth (storage volume → surface footprint)
   landFixed: false,          // true = respect annual/perennial split; false = fluid total pool
-  hasIrrigation: false,      // true = rainfall min constraints are softened in suitability
+  hasIrrigation: false,      // legacy mirror; gate now derived via canIrrigate() from waterSource
+  waterSource: "rainfed",    // "unlimited" | "limited" | "rainfed" — scheme/bore water availability
   livestock: {},         // {name: count} — Adjust-tab overrides
   checkedLivestock: null,  // null = default-all; populated after crops.json loads (ensureCheckedLivestock)
 };
 
 // ── Helpers ────────────────────────────────────────────────
-// Suitability grade: Ideal / Good / Marginal
+// Suitability grade: Ideal / Suitable / Unsuitable
 function subsistYield(crop,fertility,confidence){
   if(!crop.yield_low||!crop.yield_high)return 0;
   const mult=FERTILITY_MULT[fertility]||0.75;
   const mid=(crop.yield_low+crop.yield_high)/2;
   return(crop.yield_low+mid)/2*mult*(confidence/100);
+}
+
+// Can the plan irrigate (soften the minimum-rainfall suitability gate)? True for scheme/bore
+// water (unlimited or limited), or rainfed when a storage dam is being sized.
+function canIrrigate(s){
+  s = s || state;
+  return s.waterSource !== "rainfed" || !!s.irrigationDam;
+}
+
+// Annual irrigation litres per hectare for a crop in the active climate — the dam/scheme
+// shortfall only (max(0, crop ET − that month's rain) summed); wet-season demand is free.
+function cropAnnualIrrigationPerHa(crop, eto, rain){
+  if(!crop.kc) return 0;
+  eto  = eto  || (typeof state !== "undefined" && state.climateEto)  || PERTH_ETO;
+  rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
+  const kcA = monthlyKc(crop);
+  let L = 0;
+  for(let m = 0; m < 12; m++) L += Math.max(0, kcA[m] * eto[m] - rain[m]) * 10000; // mm·ha → L
+  return L;
+}
+
+// Irrigation litres per serve (dam-drawn water per serving). Lower = thriftier.
+// Returns null when there's no yield/serve basis to divide by.
+function cropWaterIntensity(crop, fertility, confidence){
+  if(!crop.kc) return null;
+  const irr = cropAnnualIrrigationPerHa(crop);
+  const yKgHa = subsistYield(crop, fertility || (typeof state!=="undefined" && state.fertility) || "medium", confidence || 100) * 1000;
+  if(yKgHa <= 0) return null;
+  const servesHa = yKgHa * 1000 / (crop.serve_g || 75);
+  if(servesHa <= 0) return null;
+  return irr / servesHa;
 }
 
 function areaForServes(crop,servesPerDay,fertility,confidence){
@@ -2333,23 +2485,40 @@ function addSupplementsToPlan(cropNames){
   renderApp();
 }
 
-// ── Crop priority tier — TEXT match × rainfall match ──────────────────────
-// Tier 4: optimal soil (TEXT) AND optimal rain (ROPMN–ROPMX)
-// Tier 3: optimal soil (TEXT) AND acceptable rain (RMIN–RMAX)
-// Tier 2: tolerated soil only AND optimal rain
-// Tier 1: tolerated soil only AND acceptable rain
-// Tier 0: rainfall outside tolerance (excluded from planner)
+// ── Crop priority tier — Ideal / Suitable / Unsuitable ─────────────────────
+// Tier 2 (Ideal):      passes the hard gate AND optimal soil AND optimal temperature
+// Tier 1 (Suitable):   passes the hard gate (climate zone, tolerated soil, rainfall,
+//                      frost survival, absolute tmin–tmax growing range)
+// Tier 0 (Unsuitable): fails the hard gate (isSuitable)
+// Rainfall lives entirely in the hard gate (isSuitable) — softened when irrigation is on.
+// "wide" soil counts as optimal (crop can be sited on its preferred texture patch).
+function soilIsOptimal(crop){
+  const userTex = state.soilTexture;
+  if(userTex === "wide") return true;                       // variable soil -> preferred patch
+  const opt = crop.text_opt || [];
+  return opt.includes(userTex) || opt.includes("wide");
+}
+function tempIsOptimal(crop){
+  const tmaxA = state.climateTmax, tminA = state.climateTmin;
+  if(!tmaxA || !tminA) return true;                          // no location temps -> don't block ideal
+  const lo = crop.temp_opt_min, hi = crop.temp_opt_max;
+  if(lo == null || hi == null) return false;                 // no optimal band -> can't be temp-ideal
+  const meanT = tmaxA.map((tx,i) => (tx + tminA[i]) / 2);
+  if(crop.perennial){
+    const pk = Math.max(...meanT);                           // warmest-month mean
+    return pk >= lo && pk <= hi;
+  } else {                                                   // annual: a frost-safe month in the band
+    const extA = state.climateTminext;
+    for(let i=0;i<12;i++){
+      const frostOk = (crop.ktmp == null) || (!extA) || (extA[i] >= crop.ktmp);
+      if(frostOk && meanT[i] >= lo && meanT[i] <= hi) return true;
+    }
+    return false;
+  }
+}
 function cropPriorityTier(crop){
-  const userTex=state.soilTexture, rain=state.annualRainfall;
-  const opt=crop.text_opt||[], tol=crop.text_tol||[];
-  const inText = opt.includes(userTex) || opt.includes("wide") || userTex==="wide";
-  const inOptRain = crop.ropmn!=null && crop.ropmx!=null && rain>=crop.ropmn && rain<=crop.ropmx;
-  const inAbsRain = crop.rain_min!=null && crop.rain_max!=null && rain>=crop.rain_min && rain<=crop.rain_max;
-  if(inText && inOptRain) return 4;
-  if(inText && inAbsRain) return 3;
-  if(inOptRain) return 2;
-  if(inAbsRain) return 1;
-  return 0;
+  if(!isSuitable(crop)) return 0;
+  return (soilIsOptimal(crop) && tempIsOptimal(crop)) ? 2 : 1;
 }
 
 
@@ -2692,12 +2861,36 @@ function generatePlan(s){
       cand.modeScore = adjY * 1e6 / sg / lh;        // serves per labour-hr
     } else if(objMode === "minimiseSpace"){
       cand.modeScore = adjY * 1e6 / sg / 10000;     // serves per m2
+    } else if(objMode === "minimiseWater"){
+      const irr = cropAnnualIrrigationPerHa(cand.crop);
+      cand.modeScore = (adjY * 1e6 / sg) / Math.max(irr, 1000);  // serves per irrigation litre (floor → rain-fed favoured)
     } else if(objMode === "maximiseYield"){
       cand.modeScore = adjY;                          // raw yield t/ha
     } else {
       cand.modeScore = cand.score;                    // balanced: cropScore 0-300
     }
   });
+
+  // ── Water-efficiency steer (Balanced + "limited" scheme/bore water) ──────
+  // A gentle tilt that nudges fresh and starch selection away from irrigation-thirsty
+  // crops without ever leaving a seasonal gap unfilled (it scales the selection key,
+  // not a gate). waterEff: 1 = thriftiest in the pool, 0 = thirstiest.
+  const waterSteerOn = (objMode === "balanced") && (s.waterSource === "limited");
+  if(waterSteerOn){
+    let lo = Infinity, hi = -Infinity;
+    candidates.forEach(c => {
+      const wi = cropWaterIntensity(c.crop);
+      c.wIntensity = (wi != null && wi > 0) ? wi : null;
+      if(c.wIntensity != null){ const L = Math.log(c.wIntensity); if(L < lo) lo = L; if(L > hi) hi = L; }
+    });
+    const span = (hi > lo) ? (hi - lo) : 1;
+    candidates.forEach(c => {
+      // log-scaled so the heavy tail (thirsty grains/perennials) doesn't compress the rest;
+      // unknown or zero-irrigation (rain-fed) → thriftiest.
+      c.waterEff = (c.wIntensity == null) ? 1
+        : 1 - Math.min(1, Math.max(0, (Math.log(c.wIntensity) - lo) / span));
+    });
+  }
 
   // ── Iterate the FIVE umbrella groups (veg split into its 3 sub-floors). ──
   // Each umbrella has a summed target across its member sub-keys; sufficiency and
@@ -2764,6 +2957,8 @@ function generatePlan(s){
 
       for(const cand of fgCandidates){
         if(usedNames.has(cand.crop.name)) continue;
+        // Water-efficiency tilt (Balanced + limited water): >1 for thrifty, <1 for thirsty.
+        const wf = waterSteerOn ? (1 + WATER_STEER_W * (2 * (cand.waterEff ?? 0.5) - 1)) : 1;
         let gapFillScore = 0, glutPenalty = 0;
         if(gapScored){
           // Use the crop's full supply window (harvest months + cool-store bridge), so a
@@ -2792,7 +2987,7 @@ function generatePlan(s){
           // Only skip a candidate when sufficient AND it adds essentially no gap coverage.
           if(sufficient && gapFillScore <= 0.05) continue;
         }
-        const netGap = gapFillScore - glutPenalty;
+        const netGap = gapFillScore * wf - glutPenalty;
 
         // Assign primary and secondary keys by mode
         // For fresh crops: gap-fill is always primary (seasonal variety preserved)
@@ -2803,7 +2998,7 @@ function generatePlan(s){
           // best tuber fills its window, the next-most-efficient crop fills the gap months —
           // grain only wins residual months no efficient tuber covers. Gap-fill is the
           // tiebreaker so among similar-efficiency crops the one covering empty months wins.
-          primary   = cand.adjYield * 1e6 / (cand.crop.serve_g || 75) / 10000;  // serves per m²
+          primary   = (cand.adjYield * 1e6 / (cand.crop.serve_g || 75) / 10000) * wf;  // serves per m² (water-tilted)
           secondary = netGap;
         } else if(key === 'protein'){
           // Protein umbrella: best-fit by efficiency (the chosen mode's modeScore), with
@@ -3381,7 +3576,7 @@ const LP_FOOD_GROUPS = FLOOR_KEYS.slice();
 
 // ── LP-driven plan generator ───────────────────────────────────────────────
 // ── LP tier labels ────────────────────────────────────────────────────────
-const LP_TIER_LABELS = { 4: "Ideal", 3: "Good", 2: "Marginal", 1: "Possible" };
+const LP_TIER_LABELS = { 2: "Ideal", 1: "Suitable" };
 // Food groups that need monthly fresh-supply constraints (storable groups exempt)
 const LP_FRESH_GROUPS = PLANT_FRESH_KEYS.slice();
 
@@ -3596,15 +3791,15 @@ function generatePlanLP(s){
   LP_FOOD_GROUPS.forEach(fg => annualServes[fg] = (targets[fg]||0) * 365);
 
   // ── TIER ITERATION ───────────────────────────────────────────────────────
-  // Try tier 4 (Ideal) only first. If any nutrient is < 85% of NRV, add tier 3
-  // (Good). Continue dropping the tier floor until coverage is met or tier 1
-  // (most permissive) is reached. Livestock is always available.
+  // Try tier 2 (Ideal) only first. If any nutrient is < 85% of NRV, drop the
+  // floor to tier 1 (Suitable) so the full hard-gate-passing pool is available.
+  // Livestock is always available.
   const COVERAGE_THRESHOLD = 0.15; // unmet < 0.15 ≡ ≥ 85% of NRV
   const tierAttempts = [];
   let bestData = null;
   let usedTier = 1;
 
-  for(const minTier of [4, 3, 2, 1]){
+  for(const minTier of [2, 1]){
     const tieredCands = allCandidates.filter(c => cropPriorityTier(c) >= minTier);
     if(tieredCands.length === 0 && lsList.length === 0){
       tierAttempts.push({tier: minTier, label: LP_TIER_LABELS[minTier], cropCount: 0, allCovered: false, uncovered: []});
@@ -3667,7 +3862,7 @@ function buildPlanFromLP(s, data, annualBudget, targets){
   let usedCoolHa=0, usedWarmHa=0;
   let usedCanopyHa=0, usedTreesHa=0, usedPerennialPlantsHa=0;
   let usedLabour=0, usedPastureHa=0;
-  const tierBreakdown = {4:0, 3:0, 2:0, 1:0};
+  const tierBreakdown = {2:0, 1:0};
 
   const MIN_HA = 0.0005;
 
@@ -4338,6 +4533,32 @@ function effectiveFoodGroup(crop){
 }
 
 // ── Suitability — simple boolean: CLIZ + TEXTR must match ──────────────
+// Temperature suitability — hard gate alongside cliz/soil/rainfall in isSuitable.
+// Reads the active location's monthly temps (set from CLIMATE_DB by selectTown).
+// Returns true when temps are missing ("Other") so temperature never over-excludes.
+// frost_hardy perennials (deciduous / winter-dormant / cold-hardy evergreens) skip the
+// active-tissue frost-kill test — they overwinter below their ktmp; growing-season warmth
+// (tmin) still gates them out of places too cold to fruit.
+function tempSuitable(crop){
+  const tmaxA = state.climateTmax, tminA = state.climateTmin, extA = state.climateTminext;
+  if(!tmaxA || !tminA || !extA) return true;              // no temp data -> don't gate
+  const ktmp = crop.ktmp, ctmin = crop.tmin, ctmax = crop.tmax;
+  const meanT = tmaxA.map((tx,i) => (tx + tminA[i]) / 2); // monthly mean temp
+  if(crop.perennial){
+    if(!crop.frost_hardy && ktmp != null && Math.min(...extA) < ktmp) return false; // frost-killed -> EXCLUDE
+    if(ctmin != null && Math.max(...meanT) < ctmin) return false; // never warm enough
+    if(ctmax != null && Math.min(...meanT) > ctmax) return false; // never cool enough
+    return true;
+  } else {                                                 // annual: needs >=1 viable month
+    for(let i=0;i<12;i++){
+      const frostOk = (ktmp == null) || (extA[i] >= ktmp);
+      const warmOk  = (ctmin == null || meanT[i] >= ctmin) && (ctmax == null || meanT[i] <= ctmax);
+      if(frostOk && warmOk) return true;
+    }
+    return false;
+  }
+}
+
 function isSuitable(crop){
   const userZone = state.climateZone;
   const userTex  = state.soilTexture;
@@ -4356,13 +4577,15 @@ function isSuitable(crop){
   const rain = state.annualRainfall || 0;
   const rMin = crop.rain_min || 0;
   const rMax = crop.rain_max || 99999;
-  if(state.hasIrrigation){
+  if(canIrrigate(state)){
     // With irrigation: deficits can be supplemented; only penalise excess rain
     // (waterlogging / disease from too much rainfall can't be irrigated away)
     if(rain > rMax * 1.25) return false;
   } else {
     if(rain < rMin || rain > rMax) return false;
   }
+  // Temperature suitability (frost-kill / absolute warm-cool range)
+  if(!tempSuitable(crop)) return false;
   return true;
 }
 
@@ -4420,6 +4643,7 @@ const OBJECTIVES = [
   {key:"minimiseLabour", label:"Minimise labour",  desc:"Maximises serves per labour-hour. Fewer crops, each dominant. Accepts more land."},
   {key:"maximiseYield",  label:"Maximise yield",   desc:"Fills all available land and labour. Pushes well past sufficiency."},
   {key:"minimiseSpace",  label:"Minimise space",   desc:"Maximises serves per m\u00b2. Fewest crops, densely allocated. Accepts more labour."},
+  {key:"minimiseWater",  label:"Minimise irrigation", desc:"Maximises serves per litre of irrigation. Favours rain-fed and water-thrifty crops."},
 
 ];
 
@@ -4527,7 +4751,7 @@ function buildCropList(crops){
     const lab     = cropLabour(c,isMech);
     let swColor, swLabel;
     if(!suit){ swColor="#B5762F"; swLabel="Outside zone"; }
-    else { const sg=getSoilSuitability(c,state.soilTexture); if(sg==="Ideal"){ swColor="#5C7A3A"; swLabel="Ideal"; } else { swColor="#8FAF60"; swLabel="Suitable"; } }
+    else { if(cropPriorityTier(c)===2){ swColor="#5C7A3A"; swLabel="Ideal"; } else { swColor="#8FAF60"; swLabel="Suitable"; } }
     const dots = MK.map((m,k)=>{ const v=c.months?.[m]; const cls=v==="P"?"p":v==="S"?"s":""; return `<div class="db-card-m ${cls}" title="${ML[k]}"></div>`; }).join("");
     return `<tr class="${checked?"":"unchecked"}">
       <td class="rownum">${i+1}</td>
@@ -4550,7 +4774,7 @@ function buildCropList(crops){
 
 function cropBase(){
   const m = state.minSuit || (state.showSuitableOnly===false ? "all" : "suitable");
-  if(m==="ideal") return CROP_DATA.filter(c => isSuitable(c) && getSoilSuitability(c,state.soilTexture)==="Ideal");
+  if(m==="ideal") return CROP_DATA.filter(c => cropPriorityTier(c)===2);
   if(m==="suitable") return CROP_DATA.filter(c => isSuitable(c));
   return CROP_DATA;
 }
@@ -4754,13 +4978,8 @@ function renderStep2(){
         </div>` : `<div style="font-size:11px;color:var(--text-mid);margin-top:3px">Pins ${state.lat}, ${state.lon} for climate data · sets the zone &amp; rainfall below (both editable)</div>`}
       </div>
       <div style="margin-bottom:12px">
-        <label>Climate data (SILO live fetch)</label>
-        <div style="font-size:11px;color:var(--text-mid);margin-bottom:4px">${state.climateEto ? `Live: ${state.climateLabel}` : "Using the bundled Perth 2005\u20132024 normal. Enter an email and fetch to load this location\u2019s real monthly climate from SILO."}</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="email" placeholder="email for SILO" value="${state.siloEmail||''}" oninput="state.siloEmail=this.value" style="flex:1"/>
-          <button class="btn" onclick="siloFetchClimate()" style="white-space:nowrap">Fetch climate</button>
-        </div>
-        ${state.climateStatus ? `<div style="font-size:11px;margin-top:4px;color:${state.climateStatus.type==='err'?'#9A3A2A':state.climateStatus.type==='ok'?'var(--green)':'var(--text-mid)'}">${state.climateStatus.msg}</div>` : ""}
+        <label>Climate</label>
+        <div style="font-size:11px;color:var(--text-mid)">${state.climateEto ? state.climateLabel + " normal &mdash; drives the irrigation &amp; dam estimates and temperature suitability." : "Bundled Perth normal (a custom location has no baked climate)."}</div>
       </div>
       <div style="margin-bottom:12px">
         <label>Climate zone (Köppen)</label>
@@ -4773,15 +4992,22 @@ function renderStep2(){
       </div>
       <div style="margin-bottom:12px">
         <label>Annual rainfall (mm)</label>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="number" min="0" max="5000" step="50" value="${state.annualRainfall}" oninput="state.annualRainfall=+this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100px"/>
-          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;font-size:12px;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" ${state.hasIrrigation?"checked":""} style="margin:0"
-              onchange="state.hasIrrigation=this.checked;state.checkedCrops=null;state.plan=null;renderApp()"/>
-            Irrigation available
-          </label>
-        </div>
-        ${state.hasIrrigation?'<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Irrigation active — minimum rainfall constraints softened.</div>':''}
+        <input type="number" min="0" max="5000" step="50" value="${state.annualRainfall}" oninput="state.annualRainfall=+this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100px"/>
+      </div>
+      <div style="margin-bottom:12px">
+        <label>Scheme / bore water</label>
+        <select onchange="state.waterSource=this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100%">
+          <option value="unlimited" ${state.waterSource==="unlimited"?"selected":""}>Yes — unlimited (mains / bore)</option>
+          <option value="limited" ${state.waterSource==="limited"?"selected":""}>Yes — limited (minimise irrigation)</option>
+          <option value="rainfed" ${state.waterSource==="rainfed"?"selected":""}>No — rainfed (+ optional dam)</option>
+        </select>
+        ${state.waterSource==="rainfed"
+          ? (state.irrigationDam
+              ? '<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Rainfed — crops irrigated from the dam you size below; rainfall constraints softened.</div>'
+              : '<div style="font-size:11px;color:var(--text-mid);margin-top:3px">Strict rainfed: crops must survive on rainfall alone. Turn on the dam below to irrigate from stored rain.</div>')
+          : (state.waterSource==="limited"
+              ? '<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Irrigation active, limited — the Balanced planner steers toward water-thrifty crops.</div>'
+              : '<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Irrigation active — minimum rainfall constraints softened.</div>')}
       </div>
       <div style="margin-bottom:12px">
         <label>Soil fertility</label>
@@ -5379,13 +5605,11 @@ function renderStep4(){
       ${p.lpInfo ? (()=>{
         const li = p.lpInfo;
         const tb = li.tierBreakdown || {};
-        const tbParts = [4,3,2,1].filter(t => tb[t] > 0).map(t => `${tb[t]} ${LP_TIER_LABELS[t]}`);
+        const tbParts = [2,1].filter(t => tb[t] > 0).map(t => `${tb[t]} ${LP_TIER_LABELS[t]}`);
         const tierLine = li.usedTierLabel ?
           `<div style="font-size:12px;margin-top:4px">Suitability tier floor: <strong>${li.usedTierLabel}</strong> (tier ${li.usedTier}) — ${
-            li.usedTier === 4 ? "Ideal crops alone were sufficient." :
-            li.usedTier === 3 ? "needed to include Good crops to meet NRVs." :
-            li.usedTier === 2 ? "needed to include Marginal crops to meet NRVs (some climate/soil risk)." :
-                                "needed to include all suitable crops including Possible (high climate/soil risk)."
+            li.usedTier === 2 ? "Ideal crops (optimal soil and temperature) alone met the NRVs." :
+                                "needed to include all Suitable crops, not just Ideal ones, to meet the NRVs."
           }${tbParts.length ? ` Plan composition: ${tbParts.join(", ")}.` : ""}</div>` : "";
         const monthlyGapsLine = (li.monthlyGaps && li.monthlyGaps.length) ? (()=>{
           // Group by food group for readability
@@ -6265,85 +6489,22 @@ function renderStep5(){
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IRRIGATION DEMAND ENGINE (preview — no dam sizing yet)
+// IRRIGATION DEMAND ENGINE
 // Per-crop monthly water demand via FAO-56 Kc curve-walk × reference ET − rainfall.
-// Perth climate normals are a placeholder baseline / offline fallback; a live SILO
-// feed will replace them later. Reusable per-crop function so demand can also run
-// at selection time for a future "minimise irrigation" objective.
+// Reusable per-crop function so demand can also run at selection time for a future
+// "minimise irrigation" objective. Per-location climate is supplied from CLIMATE_DB;
+// PERTH_ETO/PERTH_RAIN below are only the fallback for a custom 'Other' location.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Jan..Dec, mm. SILO DataDrill (grid -31.95, 115.85), FAO-56 short-crop ETo (et_short_crop)
-// and daily_rain, aggregated to a 2005–2024 monthly normal. Climate baseline / offline
-// fallback until a live per-location SILO fetch is wired in.
+// and daily_rain, aggregated to a 2005-2024 monthly normal. Fallback for a custom
+// location only; named towns use their own CLIMATE_DB entry.
 const PERTH_ETO  = [208, 172, 151, 100, 71, 52, 53, 69, 93, 133, 167, 202];
 const PERTH_RAIN = [14, 17, 18, 39, 78, 113, 136, 112, 72, 36, 24, 11];
 
-// Aggregate a SILO DataDrill CSV (cols: lat,lon,YYYY-MM-DD,daily_rain,src,et_short_crop,src,meta)
-// into 12 monthly normals = mean monthly total ETo & rainfall (mm), averaged across the years present.
-function aggregateSiloCsv(text){
-  const sumR = {}, sumE = {}, yrsByMon = {};
-  let days = 0;
-  for(const ln of String(text).split(/\r?\n/)){
-    const c = ln.split(",");
-    if(c.length < 6) continue;
-    const m = (c[2] || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);   // matches data rows; skips header + metadata
-    if(!m) continue;
-    const rain = parseFloat(c[3]), eto = parseFloat(c[5]);
-    if(isNaN(rain) || isNaN(eto)) continue;
-    const y = +m[1], mo = +m[2], key = y * 100 + mo;
-    sumR[key] = (sumR[key] || 0) + rain;
-    sumE[key] = (sumE[key] || 0) + eto;
-    (yrsByMon[mo] = yrsByMon[mo] || new Set()).add(y);
-    days++;
-  }
-  if(!days) return null;
-  const eto = [], rain = [], allYears = new Set();
-  for(let mo = 1; mo <= 12; mo++){
-    const ys = [...(yrsByMon[mo] || [])];
-    ys.forEach(y => allYears.add(y));
-    let se = 0, sr = 0;
-    ys.forEach(y => { se += sumE[y*100+mo] || 0; sr += sumR[y*100+mo] || 0; });
-    eto.push(ys.length ? +(se / ys.length).toFixed(1) : PERTH_ETO[mo-1]);
-    rain.push(ys.length ? +(sr / ys.length).toFixed(1) : PERTH_RAIN[mo-1]);
-  }
-  const ay = [...allYears].sort();
-  return { eto, rain, days, years: ay.length ? (ay[0] + "\u2013" + ay[ay.length-1]) : "" };
-}
-
-// Live SILO DataDrill fetch for the current location → 12 monthly normals into state.
-async function siloFetchClimate(){
-  if(!state.siloEmail || !/.+@.+\..+/.test(state.siloEmail)){
-    state.climateStatus = { type:"err", msg:"Enter a valid email address (SILO requires one) before fetching." };
-    renderApp(); return;
-  }
-  if(state.lat == null || state.lon == null){
-    state.climateStatus = { type:"err", msg:"Pick a location first." };
-    renderApp(); return;
-  }
-  const lat = (Math.round(state.lat / 0.05) * 0.05).toFixed(2);
-  const lon = (Math.round(state.lon / 0.05) * 0.05).toFixed(2);
-  state.climateStatus = { type:"load", msg:"Fetching climate from SILO\u2026 (20-year daily series; may take a few seconds)" };
-  renderApp();
-  const url = "https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php"
-    + "?format=csv&comment=RF&lat=" + lat + "&lon=" + lon
-    + "&start=20050101&finish=20241231&username=" + encodeURIComponent(state.siloEmail) + "&password=apirequest";
-  try {
-    const resp = await fetch(url);
-    if(!resp.ok) throw new Error("HTTP " + resp.status);
-    const text = await resp.text();
-    const agg = aggregateSiloCsv(text);
-    if(!agg || agg.days < 300) throw new Error("unexpected response (no daily data)");
-    state.climateEto = agg.eto;
-    state.climateRain = agg.rain;
-    state.climateLabel = "SILO " + lat + ", " + lon + " \u00b7 " + agg.years + " normal";
-    state.climateStatus = { type:"ok", msg:"Loaded " + agg.years + ": ETo " + Math.round(agg.eto.reduce((a,b)=>a+b,0)) + " mm/yr, rainfall " + Math.round(agg.rain.reduce((a,b)=>a+b,0)) + " mm/yr." };
-    state.plan = null;
-    renderApp();
-  } catch(e){
-    state.climateStatus = { type:"err", msg:"Couldn\u2019t fetch from SILO (" + e.message + "). Still using the bundled climate \u2014 check the email and connection, or try again." };
-    renderApp();
-  }
-}
+// Per-location climate now comes from CLIMATE_DB (built once via climate_builder.html);
+// the shipped app does no live SILO fetch. PERTH_ETO/PERTH_RAIN remain the
+// fallback for a custom 'Other' location with no baked climate.
 
 // Perennial Kc categories with a year-round canopy → flat Kc. Everything else is
 // treated as winter-dormant/deciduous. (aquatic_wetbed crops are excluded upstream.)
@@ -6465,11 +6626,65 @@ function sizeDam(plan, eto, rain){
   };
 }
 
+// Per-month water balance for the plan's land crops: crop ET demand split into the
+// part met by effective rain and the irrigation shortfall (demand = effRain + irrigation).
+function propertyWaterBalance(plan, eto, rain){
+  eto  = eto  || (typeof state !== "undefined" && state.climateEto)  || PERTH_ETO;
+  rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
+  const demand = new Array(12).fill(0), effRain = new Array(12).fill(0), irrig = new Array(12).fill(0);
+  const perCrop = [];
+  (plan.selected || []).forEach(({crop, allocHa}) => {
+    if(cropHabitat(crop) !== "land") return;
+    if(!crop.kc) return;
+    const kcA = monthlyKc(crop);
+    let annualIrr = 0;
+    for(let m = 0; m < 12; m++){
+      const etc = kcA[m] * eto[m];                 // crop ET, mm
+      const eff = Math.min(rain[m], etc);          // rain that offsets watering, mm
+      const irr = Math.max(0, etc - rain[m]);      // shortfall to irrigate, mm
+      const f   = allocHa * 10000;                 // mm·ha -> L
+      demand[m]  += etc * f;
+      effRain[m] += eff * f;
+      irrig[m]   += irr * f;
+      annualIrr  += irr * f;
+    }
+    if(annualIrr > 0) perCrop.push({ name: crop.name, annualL: annualIrr });
+  });
+  perCrop.sort((a, b) => b.annualL - a.annualL);
+  const storageL = maxCumulativeDeficit(irrig);
+  const damLevel = damLevelSeries(irrig, storageL);
+  const sum = a => a.reduce((s, v) => s + v, 0);
+  return { demand, effRain, irrig, perCrop, damLevel, storageL,
+           annualDemand: sum(demand), annualEffRain: sum(effRain), annualIrrig: sum(irrig) };
+}
+
+// Dam level (L) across Jan..Dec for a monthly irrigation-draw series, matching the Rippl
+// storage figure: the reservoir sits full (= storage) through refill months and draws down
+// through each dry run; its lowest point touches 0 when sized exactly to `storage`. Computed
+// over a doubled year so a dry season that wraps Dec->Jan is captured.
+function damLevelSeries(irrig, storageL){
+  const eps = 1;
+  const level = new Array(12).fill(storageL);
+  if(irrig.every(v => v > eps)){
+    // No wet month to refill: the dam is filled once and drawn down across the whole year.
+    let cum = 0;
+    for(let m = 0; m < 12; m++){ level[m] = Math.max(0, storageL - cum); cum += irrig[m]; }
+    return level;
+  }
+  let run = 0;
+  for(let i = 0; i < 24; i++){
+    const v = irrig[i % 12];
+    if(v <= eps) run = 0; else run += v;
+    if(i >= 12) level[i % 12] = Math.max(0, storageL - run);
+  }
+  return level;
+}
+
 // Standalone monthly-litres chart + per-crop annual water-use card (Summary view).
 function renderIrrigationPreview(p){
-  const irr = propertyIrrigationCurve(p);
-  if(irr.annualTotal <= 0){
-    return `<div class="adj-card"><h2>Irrigation demand (preview)</h2>
+  const wb = propertyWaterBalance(p);
+  if(wb.annualDemand <= 0){
+    return `<div class="adj-card"><h2>Water balance (preview)</h2>
       <p class="desc">No land-grown crops with water demand in the current plan.</p></div>`;
   }
   const niceCeil = (v) => {
@@ -6477,9 +6692,10 @@ function renderIrrigationPreview(p){
     const mag = Math.pow(10, Math.floor(Math.log10(v))), n = v / mag;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
   };
-  const maxL = Math.max.apply(null, irr.monthly);
-  const axisKL = niceCeil(maxL / 1000), scaleMax = axisKL * 1000;
-  const W = 540, H = 210, PL = 46, PR = 12, PT = 12, PB = 26;
+  const peakDemandL = Math.max.apply(null, wb.demand);
+  const axisKL = niceCeil(peakDemandL / 1000), scaleMax = axisKL * 1000;        // left axis: kL/month
+  const rAxisKL = niceCeil((wb.storageL / 1000) || 1), rScaleMax = rAxisKL * 1000; // right axis: kL stored
+  const W = 560, H = 232, PL = 48, PR = 50, PT = 14, PB = 28;
   const iW = W - PL - PR, iH = H - PT - PB, gap = iW / 12, bw = gap * 0.62;
 
   const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
@@ -6487,31 +6703,61 @@ function renderIrrigationPreview(p){
     return `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`
       + `<text x="${PL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-mid)">${lbl}</text>`;
   }).join("");
-  const bars = irr.monthly.map((L, i) => {
-    const h = scaleMax > 0 ? (L / scaleMax) * iH : 0;
-    const x = PL + i * gap + (gap - bw) / 2, y = PT + iH - h;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" fill="#3E7C9A" stroke="#2C5A72" stroke-width="1"/>`
+  const rAxis = [0, 0.5, 1].map(f => {
+    const y = PT + iH - f * iH, lbl = (rAxisKL * f).toFixed(rAxisKL >= 10 ? 0 : 1);
+    return `<text x="${W - PR + 6}" y="${(y + 3).toFixed(1)}" text-anchor="start" font-size="9" fill="#B5762F">${lbl}</text>`;
+  }).join("");
+
+  // Stacked bar per month: rain-met (green) at the base, irrigation shortfall (blue) on top.
+  // Full bar height = crop ET demand; the blue cap = the deficit storage must cover.
+  const bars = wb.demand.map((D, i) => {
+    const x = PL + i * gap + (gap - bw) / 2;
+    const hRain = scaleMax > 0 ? (wb.effRain[i] / scaleMax) * iH : 0;
+    const hIrr  = scaleMax > 0 ? (wb.irrig[i]   / scaleMax) * iH : 0;
+    const yRain = PT + iH - hRain, yIrr = yRain - hIrr;
+    return `<rect x="${x.toFixed(1)}" y="${yRain.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hRain).toFixed(1)}" fill="#5C7A3A"/>`
+      + `<rect x="${x.toFixed(1)}" y="${yIrr.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hIrr).toFixed(1)}" fill="#3E7C9A"/>`
       + `<text x="${(x + bw / 2).toFixed(1)}" y="${(PT + iH + 14).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-mid)">${MONTHS[i].charAt(0).toUpperCase()}</text>`;
   }).join("");
-  const svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:560px;display:block;margin:6px 0">`
-    + `<text x="${PL - 6}" y="${PT - 2}" text-anchor="end" font-size="9" fill="var(--text-mid)">kL</text>`
-    + grid + bars + `</svg>`;
 
-  const peakIdx = irr.monthly.indexOf(maxL);
-  const peakName = (typeof MONTH_NAMES !== "undefined" && MONTH_NAMES[peakIdx]) || MONTHS[peakIdx];
-  const rows = irr.perCrop.slice(0, 15).map(c =>
+  // Dam-level line (right axis): full through winter, drawing down to empty across the dry season.
+  const pts = wb.damLevel.map((L, i) => {
+    const cx = PL + i * gap + gap / 2;
+    const cy = PT + iH - (rScaleMax > 0 ? (L / rScaleMax) * iH : 0);
+    return `${cx.toFixed(1)},${cy.toFixed(1)}`;
+  });
+  const dots = wb.damLevel.map((L, i) => {
+    const cx = PL + i * gap + gap / 2, cy = PT + iH - (rScaleMax > 0 ? (L / rScaleMax) * iH : 0);
+    return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.1" fill="#C4823A"/>`;
+  }).join("");
+  const linePath = `<polyline points="${pts.join(" ")}" fill="none" stroke="#C4823A" stroke-width="2"/>` + dots;
+
+  const svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:600px;display:block;margin:6px 0">`
+    + `<text x="${PL - 6}" y="${PT - 3}" text-anchor="end" font-size="9" fill="var(--text-mid)">kL/mo</text>`
+    + `<text x="${W - PR + 6}" y="${PT - 3}" text-anchor="start" font-size="9" fill="#B5762F">kL dam</text>`
+    + grid + rAxis + bars + linePath + `</svg>`;
+
+  const legend = `<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin:0 0 6px">`
+    + `<span><span style="display:inline-block;width:10px;height:10px;background:#5C7A3A;border-radius:2px;vertical-align:middle"></span> Met by rain</span>`
+    + `<span><span style="display:inline-block;width:10px;height:10px;background:#3E7C9A;border-radius:2px;vertical-align:middle"></span> Needs irrigation</span>`
+    + `<span><span style="display:inline-block;width:14px;height:2px;background:#C4823A;vertical-align:middle"></span> Dam level (full → empty = storage)</span>`
+    + `</div>`;
+
+  const rainPct = wb.annualDemand > 0 ? Math.round(100 * wb.annualEffRain / wb.annualDemand) : 0;
+  const rows = wb.perCrop.slice(0, 15).map(c =>
     `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid var(--border)">`
     + `<span>${c.name}</span><span style="font-weight:700">${(c.annualL / 1000).toFixed(1)} kL/yr</span></div>`).join("");
-  const moreN = irr.perCrop.length - 15;
+  const moreN = wb.perCrop.length - 15;
 
   return `<div class="adj-card">
-    <h2>Irrigation demand (preview)</h2>
-    <p class="desc">Estimated monthly irrigation the crop plan needs, summed across land-grown perennials and annuals (aquatic crops draw from the pond and are excluded). Placeholder Perth climate.</p>
+    <h2>Water balance (preview)</h2>
+    <p class="desc">Monthly crop water demand (ET) for land-grown crops, split into the part rain covers and the part you irrigate. The dam-level line carries winter water into summer; the depth it draws down to empty is the storage the dam must hold. Effective rain on the cropped area only (aquatic crops draw from the pond and are excluded). Climate: ${state.climateLabel || "bundled Perth normal"}.</p>
+    ${legend}
     ${svg}
-    <div style="font-size:12px;margin-top:4px">Total ≈ <strong>${(irr.annualTotal / 1000).toFixed(0)} kL/year</strong> (${(irr.annualTotal / 1e6).toFixed(2)} ML) · peak month <strong>${peakName}</strong> at ${(maxL / 1000).toFixed(0)} kL.</div>
-    <h3 style="margin:12px 0 4px;font-size:13px">Annual water use by crop</h3>
+    <div style="font-size:12px;margin-top:4px">Crop demand ≈ <strong>${(wb.annualDemand / 1000).toFixed(0)} kL/yr</strong>; rain covers <strong>${(wb.annualEffRain / 1000).toFixed(0)} kL</strong> (${rainPct}%), leaving <strong>${(wb.annualIrrig / 1000).toFixed(0)} kL</strong> to irrigate. Peak storage to carry the dry season ≈ <strong>${(wb.storageL / 1000).toFixed(0)} kL</strong> — the irrigation dam size.</div>
+    <h3 style="margin:12px 0 4px;font-size:13px">Annual irrigation by crop</h3>
     ${rows}${moreN > 0 ? `<div style="font-size:11px;color:var(--text-mid);padding-top:4px">+ ${moreN} more crop${moreN > 1 ? "s" : ""}</div>` : ""}
-    <p class="desc" style="margin-top:8px">Caveat: omits irrigation efficiency, dam-surface evaporation, and catchment fill; climate figures are placeholder normals pending the live SILO feed.</p>
+    <p class="desc" style="margin-top:8px">Caveat: omits irrigation efficiency, dam-surface evaporation, and catchment fill; climate figures are SILO 2005-2024 normals for the selected location.</p>
   </div>`;
 }
 
@@ -7184,6 +7430,7 @@ function serializeState(){
     climateZone: s.climateZone,
     town: s.town, lat: s.lat, lon: s.lon,
     climateEto: s.climateEto, climateRain: s.climateRain, climateLabel: s.climateLabel,
+    climateTmax: s.climateTmax, climateTmin: s.climateTmin, climateTminext: s.climateTminext,
     soilTexture: s.soilTexture,
     annualRainfall: s.annualRainfall,
     annualHa: s.annualHa,
@@ -7194,6 +7441,7 @@ function serializeState(){
     damDepth:         s.damDepth         || 3,
     landFixed:        s.landFixed        !== false,
     hasIrrigation:    s.hasIrrigation    || false,
+    waterSource:      s.waterSource      || "rainfed",
     objectives: s.objectives,
     checkedCrops: [...(s.checkedCrops || new Set())],
     checkedLivestock: [...(s.checkedLivestock || new Set())],
@@ -7224,6 +7472,9 @@ function deserializeState(str){
       climateEto:      obj.climateEto       ?? state.climateEto,
       climateRain:     obj.climateRain      ?? state.climateRain,
       climateLabel:    obj.climateLabel     ?? state.climateLabel,
+      climateTmax:     obj.climateTmax      ?? state.climateTmax,
+      climateTmin:     obj.climateTmin      ?? state.climateTmin,
+      climateTminext:  obj.climateTminext   ?? state.climateTminext,
       soilTexture:     obj.soilTexture      || state.soilTexture,
       annualRainfall:  obj.annualRainfall   ?? state.annualRainfall,
       annualHa:        obj.annualHa         ?? state.annualHa,
@@ -7234,6 +7485,7 @@ function deserializeState(str){
       damDepth:         obj.damDepth         ?? state.damDepth,
       landFixed:        obj.landFixed        ?? state.landFixed,
       hasIrrigation:    obj.hasIrrigation    ?? state.hasIrrigation,
+      waterSource:      obj.waterSource      ?? (obj.hasIrrigation ? "unlimited" : "rainfed"),
       objectives:      obj.objectives       || state.objectives,
       livestock:       obj.livestock        || {},
       planAdjustments: obj.planAdjustments  || {},
