@@ -1719,7 +1719,7 @@ const FERTILITY_MULT={low:0.55,medium:0.75,high:0.95};
 // between crops covering similar months, the water-thrifty one wins. Tune against the
 // rendered Darlington plan — raise it if thirsty perennials/grains still dominate, lower
 // it if seasonal variety suffers.
-const WATER_STEER_W = 0.15;
+const WATER_STEER_W = 0.3;
 const STORABILITY_RANK={"Long Storage":5,"Medium Storage":4,"Year-round Proc.":3,"Short Storage":2,"Fresh Only":1};
 // Food-group display tag classes, keyed by the crops.json food_group strings (13-group taxonomy).
 const FG_TAG={"Dark Green Vegetables":"tag-darkgreen","Red/Orange Vegetables":"tag-redorange","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
@@ -6538,16 +6538,28 @@ function monthlyKc(crop){
     return out;
   }
 
-  // annual
-  const plant = (getCropSeason(crop) === "warm") ? 9 : 4;   // Oct=9 warm, May=4 cool
+  // annual: anchor the growing window to the harvest months (reliable in the DB) and
+  // back-date the sow month by the crop's growing-season length (gmin). The Kc trapezoid
+  // runs sow → last harvest, so water is drawn across the whole season — peaking mid-season,
+  // low at harvest — not over a fixed 7-9 month block. Falls back to a fixed seasonal plant
+  // month only when no harvest months are recorded.
   const harvest = [];
   MONTHS.forEach((m, i) => { const v = (crop.months || {})[m]; if(v === "P" || v === "S") harvest.push(i); });
-  let L;
+  let plant, L;
   if(harvest.length){
-    let maxFwd = 0;
-    harvest.forEach(h => { const fwd = (h - plant + 12) % 12; if(fwd > maxFwd) maxFwd = fwd; });
-    L = maxFwd + 1;                                  // planting month → last harvest month
+    // Find the harvest block by its largest calendar gap (handles year-wrap and long
+    // windows): harvest ends just before the biggest gap and starts just after it.
+    const hs = [...new Set(harvest)].sort((a, b) => a - b);
+    let lastH = hs[hs.length - 1], firstH = hs[0], maxGap = (firstH - lastH + 12) % 12;
+    for(let i = 0; i < hs.length - 1; i++){
+      const g = (hs[i + 1] - hs[i] + 12) % 12;
+      if(g > maxGap){ maxGap = g; lastH = hs[i]; firstH = hs[i + 1]; }
+    }
+    const growMonths = Math.max(1, Math.round((crop.gmin || crop.gmax || 120) / 30));
+    plant = (firstH - growMonths + 12) % 12;                // sow gmin months before first harvest
+    L = ((lastH - plant + 12) % 12) + 1;                    // sow → last harvest, inclusive
   } else {
+    plant = (getCropSeason(crop) === "warm") ? 9 : 4;       // Oct=9 warm, May=4 cool
     L = Math.max(3, Math.round((crop.gmax || crop.gmin || 120) / 30));
   }
   L = Math.min(L, 12);
