@@ -1712,22 +1712,22 @@ function splitADG(a){
 }
 const FERTILITY_MULT={low:0.55,medium:0.75,high:0.95};
 
-// Water-efficiency steer strength — Balanced mode + "limited" scheme/bore water only.
-// 0 = off. It scales the fresh gap-fill score and the starch land-efficiency key by
-// ±(W) around neutral, so a thrifty crop gets up to +W and a thirsty one −W on its
-// selection key. Gentle: a thirsty crop that UNIQUELY fills a seasonal gap still wins;
-// between crops covering similar months, the water-thrifty one wins. Tune against the
-// rendered Darlington plan — raise it if thirsty perennials/grains still dominate, lower
-// it if seasonal variety suffers.
-const WATER_STEER_W = 0.3;
+// Water-efficiency steer strength by context (0 = off). Scarcer water / an explicit water
+// objective get a firmer tilt than metered "limited" supply. It scales the fresh gap-fill
+// score and the starch land-efficiency key by ±W around neutral (thrifty crop +W, thirsty −W).
+// A thirsty crop that UNIQUELY fills a seasonal gap still wins; between crops covering similar
+// months, the water-thrifty one wins. Tune against the rendered plan.
+const WATER_STEER_LIMITED   = 0.3;  // Balanced + metered scheme/bore water
+const WATER_STEER_RAINFED   = 0.5;  // Balanced + rainfed (no external supply — scarcest)
+const WATER_STEER_OBJECTIVE = 0.6;  // explicit "Minimise irrigation" objective
 const STORABILITY_RANK={"Long Storage":5,"Medium Storage":4,"Year-round Proc.":3,"Short Storage":2,"Fresh Only":1};
 // Food-group display tag classes, keyed by the crops.json food_group strings (13-group taxonomy).
-const FG_TAG={"Dark Green Vegetables":"tag-darkgreen","Red/Orange Vegetables":"tag-redorange","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
-const FG_SHORT={"Dark Green Vegetables":"Greens","Red/Orange Vegetables":"Red/Org","Other Vegetables":"Veg","Tubers":"Tubers","Fruit":"Fruit","Grain (Cereal) Foods":"Grain","Legumes":"Legumes","Nuts & Seeds":"Nuts","Eggs":"Eggs","Meat":"Meat","Dairy":"Dairy","Herbs":"Herb","Discretionary":"Disc"};
+const FG_TAG={"Dark Green Vegetables":"tag-darkgreen","Red/Orange Vegetables":"tag-redorange","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Nuts":"tag-protein","Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
+const FG_SHORT={"Dark Green Vegetables":"Greens","Red/Orange Vegetables":"Red/Org","Other Vegetables":"Veg","Tubers":"Tubers","Fruit":"Fruit","Grain (Cereal) Foods":"Grain","Legumes":"Legumes","Nuts & Seeds":"Nuts","Nuts":"Nuts","Seeds":"Seeds","Eggs":"Eggs","Meat":"Meat","Dairy":"Dairy","Herbs":"Herb","Discretionary":"Disc"};
 // Floored groups iterated in greedy phase-1, as crops.json food_group strings (order = allocation priority).
-const FG_GROUPS=["Dark Green Vegetables","Red/Orange Vegetables","Other Vegetables","Fruit","Tubers","Nuts & Seeds","Legumes","Eggs","Dairy","Meat"];
+const FG_GROUPS=["Dark Green Vegetables","Red/Orange Vegetables","Other Vegetables","Fruit","Tubers","Nuts","Seeds","Legumes","Eggs","Dairy","Meat"];
 // food_group string → internal key (13-group). Keep in sync with fgToKey().
-const FG_KEY={"Dark Green Vegetables":"darkgreen","Red/Orange Vegetables":"redorange","Other Vegetables":"othervet","Tubers":"starches","Fruit":"fruit","Grain (Cereal) Foods":"starches","Legumes":"legumes","Nuts & Seeds":"nutsseeds","Eggs":"eggs","Meat":"meat","Dairy":"dairy","Herbs":"herbs","Discretionary":"discretionary"};
+const FG_KEY={"Dark Green Vegetables":"darkgreen","Red/Orange Vegetables":"redorange","Other Vegetables":"othervet","Tubers":"starches","Fruit":"fruit","Grain (Cereal) Foods":"starches","Legumes":"legumes","Nuts & Seeds":"nutsseeds","Nuts":"nutsseeds","Seeds":"nutsseeds","Eggs":"eggs","Meat":"meat","Dairy":"dairy","Herbs":"herbs","Discretionary":"discretionary"};
 // ── Umbrella food groups (ADG-5 allocation model) ────────────────────────────
 // Phase 1 allocates against FIVE umbrella floors, not the 13 sub-groups, EXCEPT
 // vegetables which keep their three sub-floors (user wants the veg sub-groups
@@ -2871,11 +2871,17 @@ function generatePlan(s){
     }
   });
 
-  // ── Water-efficiency steer (Balanced + "limited" scheme/bore water) ──────
-  // A gentle tilt that nudges fresh and starch selection away from irrigation-thirsty
-  // crops without ever leaving a seasonal gap unfilled (it scales the selection key,
-  // not a gate). waterEff: 1 = thriftiest in the pool, 0 = thirstiest.
-  const waterSteerOn = (objMode === "balanced") && (s.waterSource === "limited");
+  // ── Water-efficiency steer ───────────────────────────────────────────────
+  // Active in Balanced (strength by water scarcity) and in the explicit Minimise-irrigation
+  // objective (which also sets modeScore = serves/litre for the protein/other groups, while
+  // the tilt below covers fresh & starch). waterEff: 1 = thriftiest, 0 = thirstiest.
+  let waterSteerW = 0;
+  if(objMode === "minimiseWater")             waterSteerW = WATER_STEER_OBJECTIVE;
+  else if(objMode === "balanced"){
+    if(s.waterSource === "rainfed")           waterSteerW = WATER_STEER_RAINFED;
+    else if(s.waterSource === "limited")      waterSteerW = WATER_STEER_LIMITED;
+  }
+  const waterSteerOn = waterSteerW > 0;
   if(waterSteerOn){
     let lo = Infinity, hi = -Infinity;
     candidates.forEach(c => {
@@ -2958,7 +2964,7 @@ function generatePlan(s){
       for(const cand of fgCandidates){
         if(usedNames.has(cand.crop.name)) continue;
         // Water-efficiency tilt (Balanced + limited water): >1 for thrifty, <1 for thirsty.
-        const wf = waterSteerOn ? (1 + WATER_STEER_W * (2 * (cand.waterEff ?? 0.5) - 1)) : 1;
+        const wf = waterSteerOn ? (1 + waterSteerW * (2 * (cand.waterEff ?? 0.5) - 1)) : 1;
         let gapFillScore = 0, glutPenalty = 0;
         if(gapScored){
           // Use the crop's full supply window (harvest months + cool-store bridge), so a
@@ -6538,28 +6544,18 @@ function monthlyKc(crop){
     return out;
   }
 
-  // annual: anchor the growing window to the harvest months (reliable in the DB) and
-  // back-date the sow month by the crop's growing-season length (gmin). The Kc trapezoid
-  // runs sow → last harvest, so water is drawn across the whole season — peaking mid-season,
-  // low at harvest — not over a fixed 7-9 month block. Falls back to a fixed seasonal plant
-  // month only when no harvest months are recorded.
+  // annual: fixed seasonal planting month (Oct for warm-season crops, May for cool-season),
+  // with the Kc trapezoid spread from planting to the last harvest month. (gmin/gmax growing-
+  // season figures were trialled for back-dating but found unreliable, so reverted to this.)
+  const plant = (getCropSeason(crop) === "warm") ? 9 : 4;   // Oct=9 warm, May=4 cool
   const harvest = [];
   MONTHS.forEach((m, i) => { const v = (crop.months || {})[m]; if(v === "P" || v === "S") harvest.push(i); });
-  let plant, L;
+  let L;
   if(harvest.length){
-    // Find the harvest block by its largest calendar gap (handles year-wrap and long
-    // windows): harvest ends just before the biggest gap and starts just after it.
-    const hs = [...new Set(harvest)].sort((a, b) => a - b);
-    let lastH = hs[hs.length - 1], firstH = hs[0], maxGap = (firstH - lastH + 12) % 12;
-    for(let i = 0; i < hs.length - 1; i++){
-      const g = (hs[i + 1] - hs[i] + 12) % 12;
-      if(g > maxGap){ maxGap = g; lastH = hs[i]; firstH = hs[i + 1]; }
-    }
-    const growMonths = Math.max(1, Math.round((crop.gmin || crop.gmax || 120) / 30));
-    plant = (firstH - growMonths + 12) % 12;                // sow gmin months before first harvest
-    L = ((lastH - plant + 12) % 12) + 1;                    // sow → last harvest, inclusive
+    let maxFwd = 0;
+    harvest.forEach(h => { const fwd = (h - plant + 12) % 12; if(fwd > maxFwd) maxFwd = fwd; });
+    L = maxFwd + 1;                                  // planting month → last harvest month
   } else {
-    plant = (getCropSeason(crop) === "warm") ? 9 : 4;       // Oct=9 warm, May=4 cool
     L = Math.max(3, Math.round((crop.gmax || crop.gmin || 120) / 30));
   }
   L = Math.min(L, 12);
