@@ -1711,6 +1711,15 @@ function splitADG(a){
   };
 }
 const FERTILITY_MULT={low:0.55,medium:0.75,high:0.95};
+
+// Water-efficiency steer strength — Balanced mode + "limited" scheme/bore water only.
+// 0 = off. It scales the fresh gap-fill score and the starch land-efficiency key by
+// ±(W) around neutral, so a thrifty crop gets up to +W and a thirsty one −W on its
+// selection key. Gentle: a thirsty crop that UNIQUELY fills a seasonal gap still wins;
+// between crops covering similar months, the water-thrifty one wins. Tune against the
+// rendered Darlington plan — raise it if thirsty perennials/grains still dominate, lower
+// it if seasonal variety suffers.
+const WATER_STEER_W = 0.15;
 const STORABILITY_RANK={"Long Storage":5,"Medium Storage":4,"Year-round Proc.":3,"Short Storage":2,"Fresh Only":1};
 // Food-group display tag classes, keyed by the crops.json food_group strings (13-group taxonomy).
 const FG_TAG={"Dark Green Vegetables":"tag-darkgreen","Red/Orange Vegetables":"tag-redorange","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
@@ -2098,6 +2107,7 @@ let state={
     minimiseLabour:"off",
     maximiseYield:"off",
     minimiseSpace:"off",
+    minimiseWater:"off",
     nutrientLP:"off",
   },
   // crop selection
@@ -2123,7 +2133,8 @@ let state={
   irrigationDam: false,      // true = size a storage dam from irrigation demand (hides manual surfaceWaterHa)
   damDepth: 3,               // m — average usable dam depth (storage volume → surface footprint)
   landFixed: false,          // true = respect annual/perennial split; false = fluid total pool
-  hasIrrigation: false,      // true = rainfall min constraints are softened in suitability
+  hasIrrigation: false,      // legacy mirror; gate now derived via canIrrigate() from waterSource
+  waterSource: "rainfed",    // "unlimited" | "limited" | "rainfed" — scheme/bore water availability
   livestock: {},         // {name: count} — Adjust-tab overrides
   checkedLivestock: null,  // null = default-all; populated after crops.json loads (ensureCheckedLivestock)
 };
@@ -2135,6 +2146,37 @@ function subsistYield(crop,fertility,confidence){
   const mult=FERTILITY_MULT[fertility]||0.75;
   const mid=(crop.yield_low+crop.yield_high)/2;
   return(crop.yield_low+mid)/2*mult*(confidence/100);
+}
+
+// Can the plan irrigate (soften the minimum-rainfall suitability gate)? True for scheme/bore
+// water (unlimited or limited), or rainfed when a storage dam is being sized.
+function canIrrigate(s){
+  s = s || state;
+  return s.waterSource !== "rainfed" || !!s.irrigationDam;
+}
+
+// Annual irrigation litres per hectare for a crop in the active climate — the dam/scheme
+// shortfall only (max(0, crop ET − that month's rain) summed); wet-season demand is free.
+function cropAnnualIrrigationPerHa(crop, eto, rain){
+  if(!crop.kc) return 0;
+  eto  = eto  || (typeof state !== "undefined" && state.climateEto)  || PERTH_ETO;
+  rain = rain || (typeof state !== "undefined" && state.climateRain) || PERTH_RAIN;
+  const kcA = monthlyKc(crop);
+  let L = 0;
+  for(let m = 0; m < 12; m++) L += Math.max(0, kcA[m] * eto[m] - rain[m]) * 10000; // mm·ha → L
+  return L;
+}
+
+// Irrigation litres per serve (dam-drawn water per serving). Lower = thriftier.
+// Returns null when there's no yield/serve basis to divide by.
+function cropWaterIntensity(crop, fertility, confidence){
+  if(!crop.kc) return null;
+  const irr = cropAnnualIrrigationPerHa(crop);
+  const yKgHa = subsistYield(crop, fertility || (typeof state!=="undefined" && state.fertility) || "medium", confidence || 100) * 1000;
+  if(yKgHa <= 0) return null;
+  const servesHa = yKgHa * 1000 / (crop.serve_g || 75);
+  if(servesHa <= 0) return null;
+  return irr / servesHa;
 }
 
 function areaForServes(crop,servesPerDay,fertility,confidence){
@@ -2819,12 +2861,36 @@ function generatePlan(s){
       cand.modeScore = adjY * 1e6 / sg / lh;        // serves per labour-hr
     } else if(objMode === "minimiseSpace"){
       cand.modeScore = adjY * 1e6 / sg / 10000;     // serves per m2
+    } else if(objMode === "minimiseWater"){
+      const irr = cropAnnualIrrigationPerHa(cand.crop);
+      cand.modeScore = (adjY * 1e6 / sg) / Math.max(irr, 1000);  // serves per irrigation litre (floor → rain-fed favoured)
     } else if(objMode === "maximiseYield"){
       cand.modeScore = adjY;                          // raw yield t/ha
     } else {
       cand.modeScore = cand.score;                    // balanced: cropScore 0-300
     }
   });
+
+  // ── Water-efficiency steer (Balanced + "limited" scheme/bore water) ──────
+  // A gentle tilt that nudges fresh and starch selection away from irrigation-thirsty
+  // crops without ever leaving a seasonal gap unfilled (it scales the selection key,
+  // not a gate). waterEff: 1 = thriftiest in the pool, 0 = thirstiest.
+  const waterSteerOn = (objMode === "balanced") && (s.waterSource === "limited");
+  if(waterSteerOn){
+    let lo = Infinity, hi = -Infinity;
+    candidates.forEach(c => {
+      const wi = cropWaterIntensity(c.crop);
+      c.wIntensity = (wi != null && wi > 0) ? wi : null;
+      if(c.wIntensity != null){ const L = Math.log(c.wIntensity); if(L < lo) lo = L; if(L > hi) hi = L; }
+    });
+    const span = (hi > lo) ? (hi - lo) : 1;
+    candidates.forEach(c => {
+      // log-scaled so the heavy tail (thirsty grains/perennials) doesn't compress the rest;
+      // unknown or zero-irrigation (rain-fed) → thriftiest.
+      c.waterEff = (c.wIntensity == null) ? 1
+        : 1 - Math.min(1, Math.max(0, (Math.log(c.wIntensity) - lo) / span));
+    });
+  }
 
   // ── Iterate the FIVE umbrella groups (veg split into its 3 sub-floors). ──
   // Each umbrella has a summed target across its member sub-keys; sufficiency and
@@ -2891,6 +2957,8 @@ function generatePlan(s){
 
       for(const cand of fgCandidates){
         if(usedNames.has(cand.crop.name)) continue;
+        // Water-efficiency tilt (Balanced + limited water): >1 for thrifty, <1 for thirsty.
+        const wf = waterSteerOn ? (1 + WATER_STEER_W * (2 * (cand.waterEff ?? 0.5) - 1)) : 1;
         let gapFillScore = 0, glutPenalty = 0;
         if(gapScored){
           // Use the crop's full supply window (harvest months + cool-store bridge), so a
@@ -2919,7 +2987,7 @@ function generatePlan(s){
           // Only skip a candidate when sufficient AND it adds essentially no gap coverage.
           if(sufficient && gapFillScore <= 0.05) continue;
         }
-        const netGap = gapFillScore - glutPenalty;
+        const netGap = gapFillScore * wf - glutPenalty;
 
         // Assign primary and secondary keys by mode
         // For fresh crops: gap-fill is always primary (seasonal variety preserved)
@@ -2930,7 +2998,7 @@ function generatePlan(s){
           // best tuber fills its window, the next-most-efficient crop fills the gap months —
           // grain only wins residual months no efficient tuber covers. Gap-fill is the
           // tiebreaker so among similar-efficiency crops the one covering empty months wins.
-          primary   = cand.adjYield * 1e6 / (cand.crop.serve_g || 75) / 10000;  // serves per m²
+          primary   = (cand.adjYield * 1e6 / (cand.crop.serve_g || 75) / 10000) * wf;  // serves per m² (water-tilted)
           secondary = netGap;
         } else if(key === 'protein'){
           // Protein umbrella: best-fit by efficiency (the chosen mode's modeScore), with
@@ -4509,7 +4577,7 @@ function isSuitable(crop){
   const rain = state.annualRainfall || 0;
   const rMin = crop.rain_min || 0;
   const rMax = crop.rain_max || 99999;
-  if(state.hasIrrigation){
+  if(canIrrigate(state)){
     // With irrigation: deficits can be supplemented; only penalise excess rain
     // (waterlogging / disease from too much rainfall can't be irrigated away)
     if(rain > rMax * 1.25) return false;
@@ -4575,6 +4643,7 @@ const OBJECTIVES = [
   {key:"minimiseLabour", label:"Minimise labour",  desc:"Maximises serves per labour-hour. Fewer crops, each dominant. Accepts more land."},
   {key:"maximiseYield",  label:"Maximise yield",   desc:"Fills all available land and labour. Pushes well past sufficiency."},
   {key:"minimiseSpace",  label:"Minimise space",   desc:"Maximises serves per m\u00b2. Fewest crops, densely allocated. Accepts more labour."},
+  {key:"minimiseWater",  label:"Minimise irrigation", desc:"Maximises serves per litre of irrigation. Favours rain-fed and water-thrifty crops."},
 
 ];
 
@@ -4923,15 +4992,22 @@ function renderStep2(){
       </div>
       <div style="margin-bottom:12px">
         <label>Annual rainfall (mm)</label>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="number" min="0" max="5000" step="50" value="${state.annualRainfall}" oninput="state.annualRainfall=+this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100px"/>
-          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;font-size:12px;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" ${state.hasIrrigation?"checked":""} style="margin:0"
-              onchange="state.hasIrrigation=this.checked;state.checkedCrops=null;state.plan=null;renderApp()"/>
-            Irrigation available
-          </label>
-        </div>
-        ${state.hasIrrigation?'<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Irrigation active — minimum rainfall constraints softened.</div>':''}
+        <input type="number" min="0" max="5000" step="50" value="${state.annualRainfall}" oninput="state.annualRainfall=+this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100px"/>
+      </div>
+      <div style="margin-bottom:12px">
+        <label>Scheme / bore water</label>
+        <select onchange="state.waterSource=this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100%">
+          <option value="unlimited" ${state.waterSource==="unlimited"?"selected":""}>Yes — unlimited (mains / bore)</option>
+          <option value="limited" ${state.waterSource==="limited"?"selected":""}>Yes — limited (minimise irrigation)</option>
+          <option value="rainfed" ${state.waterSource==="rainfed"?"selected":""}>No — rainfed (+ optional dam)</option>
+        </select>
+        ${state.waterSource==="rainfed"
+          ? (state.irrigationDam
+              ? '<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Rainfed — crops irrigated from the dam you size below; rainfall constraints softened.</div>'
+              : '<div style="font-size:11px;color:var(--text-mid);margin-top:3px">Strict rainfed: crops must survive on rainfall alone. Turn on the dam below to irrigate from stored rain.</div>')
+          : (state.waterSource==="limited"
+              ? '<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Irrigation active, limited — the Balanced planner steers toward water-thrifty crops.</div>'
+              : '<div style="font-size:11px;color:var(--green-dk);margin-top:3px">✓ Irrigation active — minimum rainfall constraints softened.</div>')}
       </div>
       <div style="margin-bottom:12px">
         <label>Soil fertility</label>
@@ -7365,6 +7441,7 @@ function serializeState(){
     damDepth:         s.damDepth         || 3,
     landFixed:        s.landFixed        !== false,
     hasIrrigation:    s.hasIrrigation    || false,
+    waterSource:      s.waterSource      || "rainfed",
     objectives: s.objectives,
     checkedCrops: [...(s.checkedCrops || new Set())],
     checkedLivestock: [...(s.checkedLivestock || new Set())],
@@ -7408,6 +7485,7 @@ function deserializeState(str){
       damDepth:         obj.damDepth         ?? state.damDepth,
       landFixed:        obj.landFixed        ?? state.landFixed,
       hasIrrigation:    obj.hasIrrigation    ?? state.hasIrrigation,
+      waterSource:      obj.waterSource      ?? (obj.hasIrrigation ? "unlimited" : "rainfed"),
       objectives:      obj.objectives       || state.objectives,
       livestock:       obj.livestock        || {},
       planAdjustments: obj.planAdjustments  || {},
