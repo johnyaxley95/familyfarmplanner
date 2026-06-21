@@ -921,6 +921,126 @@ function placeCropsOnFacets(plan, siteModel, s){
   };
 }
 
+// ── Stage 6 · Step A: guild composition ─────────────────────────────────────
+// Concept A — crop classification tier (a crop ATTRIBUTE; distinct from
+// cropPriorityTier, which is a suitability grade). Sets distance-from-house in
+// Concept B and informs guild grouping here.
+//   1 Horticultural — annual veg / intensive horticulture (high attention)
+//   2 Perennials    — fruit, berries, perennial veg (excl. nuts)
+//   3 Broad-acre    — nuts, grain, seeds, large stock (low attention)
+function guildTier(crop){
+  const fg = crop.food_group || "";
+  if(/nut|grain|cereal|seed/i.test(fg) || fg === "Meat") return 3;
+  return crop.perennial ? 2 : 1;
+}
+
+// Hydrozone band from water requirement — centre of the ROPMN–ROPMX optimal
+// range, bucketed per SPATIAL_ZONES_HANDOVER §2. Falls back to rain_min/max.
+function hydrozoneBand(crop){
+  const lo = crop.ropmn != null ? crop.ropmn : crop.rain_min;
+  const hi = crop.ropmx != null ? crop.ropmx : crop.rain_max;
+  const mid = (Number(lo) + Number(hi)) / 2;
+  if(!isFinite(mid)) return "moderate";
+  if(mid <= 700)  return "low";
+  if(mid <= 1000) return "moderate";
+  if(mid <= 1400) return "high";
+  return "veryhigh";
+}
+
+// Deciduous / evergreen / annual — reuses EVERGREEN_CATS + crop.kc.cat.
+function cropPhenology(crop){
+  if(!crop || !crop.perennial) return "annual";
+  const cat = crop.kc && crop.kc.cat;
+  return (cat && EVERGREEN_CATS.has(cat)) ? "evergreen" : "deciduous";
+}
+
+// Do two crops share a tolerated soil texture? ("wide" matches anything.)
+function soilOverlap(a, b){
+  const setOf = c => {
+    const s = new Set([...(c.text_opt||[]), ...(c.text_tol||[])]);
+    return s.has("wide") ? null : s;            // null = matches anything
+  };
+  const sa = setOf(a), sb = setOf(b);
+  if(sa === null || sb === null) return true;
+  for(const t of sa) if(sb.has(t)) return true;
+  return false;
+}
+
+// Coarse drainage class parsed from the EcoCrop DRAR string.
+function drainageClass(crop){
+  const d = (crop && crop.drar || "").toLowerCase();
+  if(!d) return "any";
+  if(d.includes("poor"))      return "poor";
+  if(d.includes("excessive")) return "excessive";
+  if(d.includes("well"))      return "well";
+  return "moderate";
+}
+function drainageCompatible(a, b){
+  const ca = drainageClass(a), cb = drainageClass(b);
+  return ca === "any" || cb === "any" || ca === "moderate" || cb === "moderate" || ca === cb;
+}
+
+// Compose each facet's assigned crops into permaculture guilds; fills
+// zone.layout. Runs AFTER placeCropsOnFacets (reads zone.assigned). Southern
+// hemisphere: sun in the north — tallest stacks toward the pole/south edge,
+// deciduous toward the sun/north, evergreen toward the pole/south.
+function composeGuilds(siteModel, s){
+  if(!siteModel || !Array.isArray(siteModel.zones)) return;
+  const byName = new Map((typeof CROP_DATA !== "undefined" ? CROP_DATA : []).map(c => [c.name, c]));
+  const LAYER_ORDER = ["canopy","trees","plants","annual"];
+  const phenoRank = ph => ph === "deciduous" ? 0 : ph === "annual" ? 1 : 2; // sun(N) → pole(S)
+
+  // Spread N-fixers through a list so they aren't all clustered together.
+  function disperse(list){
+    const fix = list.filter(m=>m.nfix), non = list.filter(m=>!m.nfix);
+    if(fix.length < 2 || !non.length) return list;
+    const out=[]; let fi=0; const gap=Math.max(1, Math.round(non.length/fix.length));
+    non.forEach((m,i)=>{ out.push(m); if((i+1)%gap===0 && fi<fix.length) out.push(fix[fi++]); });
+    while(fi<fix.length) out.push(fix[fi++]);
+    return out;
+  }
+
+  siteModel.zones.forEach(zone => {
+    const assigned = zone.assigned || [];
+    if(!assigned.length){ zone.layout = { guilds: [] }; return; }
+    const items = assigned.map(a => {
+      const crop = byName.get(a.name) || {};
+      return { name:a.name, ha:a.ha, layer:a.layer, h_max:crop.h_max||0,
+               phenology:cropPhenology(crop), nfix:!!crop.nfix, dep:crop.dep||"",
+               tier:guildTier(crop), hydro:hydrozoneBand(crop),
+               soilClass:((crop.text_opt||[]).join("/"))||"variable", crop };
+    });
+    // group into guilds: same hydrozone band + soil overlap + drainage compatible
+    const groups = [];
+    items.forEach(it => {
+      let g = groups.find(G => G.hydro===it.hydro &&
+        G.members.every(m => soilOverlap(m.crop,it.crop) && drainageCompatible(m.crop,it.crop)));
+      if(!g){ g={hydro:it.hydro, members:[]}; groups.push(g); }
+      g.members.push(it);
+    });
+    const sloped = (zone.slope_pct||0) >= 6;   // sloped → linear bands; flat → island
+    zone.layout = { guilds: groups.map((g,gi) => ({
+      id: gi+1, hydrozone: g.hydro,
+      drainageClass: drainageClass(g.members[0].crop),
+      soilClass: g.members[0].soilClass,
+      geometry: sloped ? "linear" : "island",
+      bands: LAYER_ORDER.map(L => {
+        const inL = g.members.filter(m=>m.layer===L);
+        if(!inL.length) return null;
+        // vertical gradation (tall→short) + aspect (deciduous sun → evergreen pole)
+        inL.sort((a,b)=> phenoRank(a.phenology)-phenoRank(b.phenology) || (b.h_max-a.h_max));
+        // disperse N-fixers WITHIN each phenology run so aspect order is preserved
+        const arranged=[]; let i=0;
+        while(i<inL.length){ let j=i; while(j<inL.length && phenoRank(inL[j].phenology)===phenoRank(inL[i].phenology)) j++;
+          arranged.push(...disperse(inL.slice(i,j))); i=j; }
+        return { layer:L,
+          edge: sloped ? ((L==="canopy"||L==="trees") ? "pole/south edge" : "sun/north edge") : "centre→edge",
+          crops: arranged.map(m=>({name:m.name, ha:m.ha, h_max:m.h_max, phenology:m.phenology, nfix:m.nfix, dep:m.dep, tier:m.tier})) };
+      }).filter(Boolean),
+    })) };
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────
 // Suitability grade: Ideal / Suitable / Unsuitable
 function subsistYield(crop,fertility,confidence){
@@ -3478,6 +3598,8 @@ function renderStep4(){
     // crop quantities — placement is strictly downstream of allocation.
     if(state.plan && state.siteModel){
       state.plan.placement = placeCropsOnFacets(state.plan, state.siteModel, state);
+      // Stage-6 step A: compose each facet's placed crops into guilds (fills zone.layout)
+      composeGuilds(state.siteModel, state);
     }
   }
   const p = state.plan;
@@ -5290,6 +5412,21 @@ function renderSpatialStep(){
   const damRows=sm.water.dams.length?sm.water.dams.map((d,k)=>`
     <tr><td>${d.type} ${k+1}</td><td>${d.catchment_ha.toFixed(2)} ha</td><td>${Math.round(d.yield_kL).toLocaleString()} kL/yr</td></tr>`).join("")
     :`<tr><td colspan="3" style="color:var(--text-mid)">No dams identified</td></tr>`;
+  const hydroLabel = h => h==="veryhigh" ? "very-high" : h;
+  const phenoMark = ph => ph==="deciduous" ? ' <span title="deciduous · sun/north side" style="color:#c9962e">☀</span>'
+                        : ph==="evergreen" ? ' <span title="evergreen · pole/south side" style="color:#3a7a3a">▲</span>' : '';
+  const guildSection = sm.zones.some(z=>z.layout && z.layout.guilds && z.layout.guilds.length) ? `
+    <h3 style="margin:0 0 4px;font-size:13px">Guild composition <span style="font-weight:400;color:var(--text-mid);font-size:11px">— how each facet's crops cluster &amp; stack · S-hemisphere: ☀ = deciduous (sun/north), ▲ = evergreen (pole/south), <span style="color:#5c9a3a;font-weight:700">N₂</span> = nitrogen fixer</span></h3>
+    <div style="margin-bottom:20px">${sm.zones.map(z=>{
+      const gs=(z.layout&&z.layout.guilds)||[]; if(!gs.length) return "";
+      return `<div class="lidcard" style="margin-bottom:8px">
+        <b>${z.name}</b> <span style="color:var(--text-mid);font-size:11px">· ${gs.length} guild${gs.length>1?"s":""}</span>
+        ${gs.map(g=>`<div style="margin-top:6px;padding-left:8px;border-left:2px solid var(--border-dk,#cbb69a)">
+          <div style="font-size:11px;color:var(--text-mid)">${g.geometry} · ${hydroLabel(g.hydrozone)} water · ${g.drainageClass} drainage</div>
+          ${g.bands.map(b=>`<div style="font-size:11.5px;margin-top:2px"><b style="text-transform:capitalize">${b.layer}</b> <span style="color:var(--text-mid);font-size:10px">${b.edge}</span>: ${b.crops.map(c=>`${c.name}${phenoMark(c.phenology)}${c.nfix?' <span title="nitrogen fixer" style="color:#5c9a3a;font-weight:700">N₂</span>':''}`).join(", ")}</div>`).join("")}
+        </div>`).join("")}
+      </div>`;
+    }).join("")}</div>` : "";
   return `<div style="padding:24px">
     <h2 style="margin:0 0 4px">Site Analysis — Active</h2>
     <p style="color:var(--text-mid);margin:0 0 16px">The nutrition plan is computed first; its crops are then <b>placed</b> onto the real per-facet areas below. Facets no longer constrain the plan — placement is downstream of allocation.</p>
@@ -5305,6 +5442,7 @@ function renderSpatialStep(){
       <thead><tr style="background:var(--head-bg,#e8e1cd)"><th style="text-align:left;padding:4px">Facet</th><th>Area</th><th>Used</th><th style="text-align:left">Crops placed</th></tr></thead>
       <tbody>${zoneRows}</tbody>
     </table>
+    ${guildSection}
     <h3 style="margin:0 0 6px;font-size:13px">Water infrastructure</h3>
     <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:20px">
       <thead><tr style="background:var(--head-bg,#e8e1cd)"><th style="text-align:left;padding:4px">Dam</th><th>Catchment</th><th>Yield</th></tr></thead>
