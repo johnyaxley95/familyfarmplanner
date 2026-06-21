@@ -794,7 +794,6 @@ let state={
     maximiseYield:"off",
     minimiseSpace:"off",
     minimiseWater:"off",
-    nutrientLP:"off",
   },
   // crop selection
   checkedCrops:null,
@@ -808,11 +807,6 @@ let state={
   foodGroupMin:(function(){const o={};FLOOR_KEYS.forEach(k=>o[k]=0);return o;})(),
   // pareto explorer
   planMode:"quick",
-  paretoObj1:"yield",
-  paretoObj2:"labour",
-  paretoResult:null,
-  paretoSelected:null,
-  paretoRunning:false,
   // livestock
   pastureHa: 0.05,          // grazing / foraging area for terrestrial livestock
   surfaceWaterHa: 0.0,       // pond / tank / flooded area — aquaculture + aquatic crops
@@ -848,30 +842,82 @@ function isCropSuitableForZone(crop,zone){
          !zone.excludedCategories.some(c=>cats.includes(c));
 }
 
-// Compute per-zone area budgets from the Site Model.
-// Returns {coolAnnualHa, warmAnnualHa, canopyHa, treesHa, plantsHa}.
-// Falls back to s.annualHa / s.perennialHa when a category has no suitable zone.
-function siteModelBudgets(siteModel,s){
-  let coolBudget=0,warmBudget=0,canopyBudget=0,treesBudget=0,plantsBudget=0;
-  // prototype crops representing each allocation category
-  const mockCoolAnnual={perennial:false,temp_opt_min:10,temp_opt_max:20,rain_min:400,rain_max:900, h_max:1,ktmp:-5,tmin:0};
-  const mockWarmAnnual={perennial:false,temp_opt_min:20,temp_opt_max:35,rain_min:400,rain_max:1500,h_max:1,ktmp:0, tmin:5};
-  const mockCanopy    ={perennial:true, temp_opt_min:15,temp_opt_max:30,rain_min:400,rain_max:1500,h_max:25,ktmp:0,tmin:5};
-  const mockTrees     ={perennial:true, temp_opt_min:15,temp_opt_max:30,rain_min:400,rain_max:1500,h_max:8, ktmp:0,tmin:5};
-  const mockPlants    ={perennial:true, temp_opt_min:10,temp_opt_max:25,rain_min:300,rain_max:1200,h_max:2, ktmp:-3,tmin:0};
-  siteModel.zones.forEach(zone=>{
-    if(isCropSuitableForZone(mockCoolAnnual,zone)) coolBudget+=zone.area_ha;
-    if(isCropSuitableForZone(mockWarmAnnual,zone)) warmBudget+=zone.area_ha;
-    if(isCropSuitableForZone(mockCanopy,zone))     canopyBudget+=zone.area_ha;
-    if(isCropSuitableForZone(mockTrees,zone))      treesBudget+=zone.area_ha;
-    if(isCropSuitableForZone(mockPlants,zone))     plantsBudget+=zone.area_ha;
+// ── Placement (Stage 6 · step 1) ───────────────────────────────────────────
+// Site the nutrition plan's crop quantities onto the real per-facet areas,
+// preserving facet identity. Runs AFTER the LP and never alters it. Each facet
+// is a finite parcel with capacity = its real area_ha, tracked PER canopy layer
+// (vertical layers stack on the same ground — guild footprint is the MAX across
+// layers, not the sum; per the Stage-6 design doc). Crops flow greedily into the
+// facets they suit (hard gate: isCropSuitableForZone), best sun/wetness fit
+// first. Area that fits nowhere is reported as overflow rather than forced.
+//
+// This replaces the former siteModelBudgets() collapse, which melted the 7
+// facets into 5 overlapping hectare ceilings and lost facet identity.
+
+// Soft fit score of a crop for a facet (hard suitability handled separately).
+function facetFit(crop, zone){
+  let f = 1;
+  const cats = deriveCropZoneCategories(crop);
+  if(zone.sun === "warm")      f *= cats.includes("warm-season") ? 1.5 : cats.includes("cool-season") ? 0.7 : 1;
+  else if(zone.sun === "cool") f *= cats.includes("cool-season") ? 1.5 : cats.includes("warm-season") ? 0.7 : 1;
+  if(zone.wetness === "wet")      f *= cats.includes("wet-tolerant") ? 1.3 : cats.includes("drought-hardy") ? 0.7 : 1;
+  else if(zone.wetness === "dry") f *= cats.includes("drought-hardy") ? 1.3 : cats.includes("wet-tolerant") ? 0.6 : 1;
+  return f;
+}
+
+// Which placement layer a crop occupies (perennials stack by canopy height;
+// annuals form their own ground layer).
+function cropPlacementLayer(crop){ return crop.perennial ? cropLayer(crop) : "annual"; }
+
+// Greedily assign the plan's crops to facets. Side effect: sets zone.assigned on
+// each Site Model zone. Returns {facets, unplaced, placedHa, unplacedHa}.
+function placeCropsOnFacets(plan, siteModel, s){
+  if(!plan || !siteModel || !Array.isArray(siteModel.zones)) return null;
+  const LAYERS = ["canopy","trees","plants","annual"];
+  // per-facet remaining capacity, tracked independently per layer (layers stack)
+  const cap = siteModel.zones.map(z => {
+    const m = {}; LAYERS.forEach(L => m[L] = z.area_ha || 0); return m;
   });
+  const assigned = siteModel.zones.map(() => []);
+  const unplaced = [];
+  let placedHa = 0, unplacedHa = 0;
+
+  // place scarcer/important crops first: higher tier, then larger area
+  const items = (plan.selected || [])
+    .map(it => ({ crop: it.crop, ha: it.allocHa || 0, tier: it.tier || 0 }))
+    .filter(it => it.crop && it.ha > 1e-9)
+    .sort((a,b) => (b.tier - a.tier) || (b.ha - a.ha));
+
+  items.forEach(({crop, ha, tier}) => {
+    let need = ha;
+    const L = cropPlacementLayer(crop);
+    // facets this crop suits (hard gate), ranked by soft fit then free capacity
+    const cand = siteModel.zones
+      .map((z, zi) => ({ zi, fit: facetFit(crop, z) }))
+      .filter(o => isCropSuitableForZone(crop, siteModel.zones[o.zi]))
+      .sort((a,b) => (b.fit - a.fit) || ((cap[b.zi][L] || 0) - (cap[a.zi][L] || 0)));
+    for(const {zi} of cand){
+      if(need <= 1e-9) break;
+      const take = Math.min(need, cap[zi][L]);
+      if(take <= 1e-9) continue;
+      cap[zi][L] -= take; need -= take; placedHa += take;
+      assigned[zi].push({ name: crop.name, ha: +take.toFixed(4), layer: L, tier });
+    }
+    if(need > 1e-6){
+      unplacedHa += need;
+      unplaced.push({ name: crop.name, ha: +need.toFixed(4), layer: L,
+        reason: cand.length ? "no facet capacity left in this layer" : "no suitable facet" });
+    }
+  });
+
+  siteModel.zones.forEach((z, zi) => { z.assigned = assigned[zi]; });
   return {
-    coolAnnualHa: coolBudget||s.annualHa,
-    warmAnnualHa: warmBudget||s.annualHa,
-    canopyHa:     canopyBudget||s.perennialHa,
-    treesHa:      treesBudget||s.perennialHa,
-    plantsHa:     plantsBudget||s.perennialHa,
+    facets: siteModel.zones.map((z, zi) => ({
+      name: z.name, area_ha: z.area_ha || 0, assigned: assigned[zi],
+      // ground footprint = MAX area used across the stacked layers, not the sum
+      usedHa: Math.max(...LAYERS.map(L => (z.area_ha || 0) - cap[zi][L])),
+    })),
+    unplaced, placedHa: +placedHa.toFixed(4), unplacedHa: +unplacedHa.toFixed(4),
   };
 }
 
@@ -1941,10 +1987,12 @@ function generatePlan(s){
   let p15GapNamesAll = [];
 
   // ── PHASE 1.5: Nutrient gap filling ──────────────────────────────────────
-  // After food-group serves are met, allocate remaining land to close NRV gaps.
-  // Only runs if the household is defined and there is remaining space.
-  // Crops are scored by nutrient density per ha for the worst-gap nutrient.
-  // Threshold: try to reach 85% of each daily NRV target.
+  // After food-group serves are met, allocate remaining land to close NRV gaps
+  // to ~85% of each daily NRV target. Two implementations, selected by P15_GAPFILL:
+  //   "lp"     — joint LP (lpSolveBigM): closes all remaining gaps together with
+  //              least extra land; naturally exploits multi-nutrient crops.
+  //   "greedy" — dormant fallback: the original per-nutrient density heuristic.
+  const P15_GAPFILL = "lp";   // flip to "greedy" to revert to the heuristic
   if(s.household && s.household.length > 0){
     const P15_THRESHOLD = 0.85;
     const P15_MAX_CROPS = 6;
@@ -1987,6 +2035,107 @@ function generatePlan(s){
       const p15Pool = candidates.filter(c =>
         c.crop.nut && !HERB_EXCLUSIONS.has(c.crop.name)
       );
+      // ── LP gap-filler (active default): "simplex-quality" — close all remaining
+      //    NRV gaps jointly with least extra land, via the lpSolveBigM engine. ──
+      if(P15_GAPFILL === "lp"){
+        // Remaining gaps with a positive shortfall (worst-first order preserved).
+        const lpGaps = p15Gaps
+          .map(([k, need]) => ({ k, need, remaining: need * P15_THRESHOLD - (nutAccum[k] || 0) }))
+          .filter(g => g.remaining > 1e-9);
+        // Land crops only — pure-aquatic crops draw on the surface-water pool
+        // (handled in Phase 1); modelling that pool here is out of scope for v1.
+        const lpPool = p15Pool.filter(c =>
+          cropHabitat(c.crop) !== "aquatic" && lpGaps.some(g => (c.crop.nut[g.k] || 0) > 0));
+
+        if(lpGaps.length && lpPool.length){
+          const nC = lpPool.length, nG = lpGaps.length, nVars = nC + nG;
+          const M_SLACK = 1e6, EPS_LAB = 1e-3;
+          // daily nutrient units delivered per ha of a candidate (cf. nutAccum build above)
+          const dailyNutPerHa = (cand, k) => {
+            const per100g = cand.crop.nut[k] || 0;
+            return per100g ? cand.adjYield * 1000 * 1000 * per100g / 100 / 365 : 0;
+          };
+          const classOf = cand => cand.crop.perennial ? cropLayer(cand.crop)
+                                                       : "annual-" + getCropSeason(cand.crop);
+          // Objective: min Σ x_i·(1+ε·labour) + M·Σ slack — least extra land/labour,
+          // big penalty for leaving a gap open (unreachable gaps stay open, not infeasible).
+          const cObj = new Array(nVars).fill(0);
+          lpPool.forEach((cand, i) => { cObj[i] = 1 + EPS_LAB * cropLabour(cand.crop, isMech); });
+          for(let g = 0; g < nG; g++) cObj[nC + g] = M_SLACK;
+
+          const A = [], ops = [], bb = [];
+          // Gap rows (normalised by shortfall → O(1) coefficients):
+          //   Σ x_i·(dailyNut/remaining) + slack_g ≥ 1
+          lpGaps.forEach((g, gi) => {
+            const row = new Array(nVars).fill(0);
+            lpPool.forEach((cand, i) => { row[i] = dailyNutPerHa(cand, g.k) / g.remaining; });
+            row[nC + gi] = 1;
+            A.push(row); ops.push(">="); bb.push(1);
+          });
+          // Land-budget rows = leftover after Phase 1 (clamped ≥0 → always feasible):
+          if(s.landFixed === false){
+            const remTotal = Math.max(0,
+              (s.annualHa || 0) + (s.perennialHa || 0) + (s.pastureHa || 0) - usedPastureHa
+              - Math.max(usedCoolHa, usedWarmHa) - perennialFootprint());
+            const row = new Array(nVars).fill(0);
+            lpPool.forEach((_c, i) => { row[i] = 1; });
+            A.push(row); ops.push("<="); bb.push(remTotal);
+          } else {
+            const caps = {
+              "annual-cool": Math.max(0, (s.annualHa || 0) - usedCoolHa),
+              "annual-warm": Math.max(0, (s.annualHa || 0) - usedWarmHa),
+              canopy: Math.max(0, (s.perennialHa || 0) - usedCanopyHa),
+              trees:  Math.max(0, (s.perennialHa || 0) - usedTreesHa),
+              plants: Math.max(0, (s.perennialHa || 0) - usedPerennialPlantsHa),
+            };
+            Object.entries(caps).forEach(([cls, cap]) => {
+              const row = new Array(nVars).fill(0); let any = false;
+              lpPool.forEach((cand, i) => { if(classOf(cand) === cls){ row[i] = 1; any = true; } });
+              if(any){ A.push(row); ops.push("<="); bb.push(cap); }
+            });
+          }
+          // Labour row
+          const labRow = new Array(nVars).fill(0);
+          lpPool.forEach((cand, i) => { labRow[i] = cropLabour(cand.crop, isMech); });
+          A.push(labRow); ops.push("<="); bb.push(Math.max(0, labourCap - usedLabour));
+
+          let lp = null;
+          try { lp = lpSolveBigM({ c: cObj, A, ops, b: bb }); } catch(e){ lp = null; }
+          if(lp && lp.status === "optimal"){
+            lpPool.forEach((cand, i) => {
+              const ha = lp.x[i] || 0;
+              if(ha < 0.002) return;
+              const cls = classOf(cand);
+              const landAvail =
+                cls === "annual-cool" ? Math.max(0, (s.annualHa || 0) - usedCoolHa) :
+                cls === "annual-warm" ? Math.max(0, (s.annualHa || 0) - usedWarmHa) :
+                cls === "canopy"      ? Math.max(0, (s.perennialHa || 0) - usedCanopyHa) :
+                cls === "trees"       ? Math.max(0, (s.perennialHa || 0) - usedTreesHa) :
+                                        Math.max(0, (s.perennialHa || 0) - usedPerennialPlantsHa);
+              const _pa = cropPoolAvail(cand.crop, landAvail);
+              const applyHa = Math.min(ha, _pa.available);
+              if(applyHa < 0.002) return;
+              const fgKey = FG_KEY[effectiveFoodGroup(cand.crop)] || "othervet";
+              addAllocation(cand.crop, applyHa, fgKey, _pa.pool);
+              const addedAnnKg = applyHa * cand.adjYield * 1000;
+              Object.entries(cand.crop.nut).forEach(([k, per100g]) => {
+                nutAccum[k] = (nutAccum[k] || 0) + addedAnnKg * 1000 * per100g / 100 / 365;
+              });
+            });
+          }
+          const lpHandled = new Set();
+          lpGaps.forEach(g => { if((nutAccum[g.k] || 0) >= g.need * P15_THRESHOLD) lpHandled.add(g.k); });
+          p15NutsCovered = [...lpHandled]
+            .filter(k => !["fat","carbs","p","na","cu","mn"].includes(k))
+            .map(k => NUTRIENT_LABELS[k]).filter(Boolean);
+        } else {
+          p15NutsCovered = [];
+        }
+      }
+
+      // ── Original greedy per-nutrient gap-fill — kept verbatim as a dormant,
+      //    revertible fallback; runs only when P15_GAPFILL === "greedy". ──
+      if(P15_GAPFILL === "greedy"){
       // Separate tracking for crops already used within Phase 1.5 (prevents the same
       // crop being picked for two different gap nutrients within the P15 budget).
       const p15AllocNames = new Set();
@@ -2074,6 +2223,7 @@ function generatePlan(s){
       p15NutsCovered = [...p15Handled]
         .filter(k => !["fat","carbs","p","na","cu","mn"].includes(k))
         .map(k => NUTRIENT_LABELS[k]).filter(Boolean);
+      }  // end greedy fallback (P15_GAPFILL === "greedy")
     }
   }
 
@@ -2311,730 +2461,6 @@ function lpSolveBigM(problem){
   return { status: infeasible ? "infeasible" : "optimal", x, objective: obj };
 }
 
-// ── Tracked nutrients for LP (skip ones plants can't supply or that aren't gated) ─
-const LP_TRACKED_NUTRIENTS = ["kcal","protein","fiber","ca","fe","mg","zn",
-                              "vitA","vitC","vitE","b1","b2","b3","b6","folate"];
-const LP_FOOD_GROUPS = FLOOR_KEYS.slice();
-
-// ── LP-driven plan generator ───────────────────────────────────────────────
-// ── LP tier labels ────────────────────────────────────────────────────────
-const LP_TIER_LABELS = { 2: "Ideal", 1: "Suitable" };
-// Food groups that need monthly fresh-supply constraints (storable groups exempt)
-const LP_FRESH_GROUPS = PLANT_FRESH_KEYS.slice();
-
-// ── Inner LP setup + solve ─────────────────────────────────────────────────
-// Builds the LP for a specific candidate pool (used by generatePlanLP's
-// tier iteration). Returns the raw LP result plus the index layout so
-// buildPlanFromLP can extract variables by meaning, not by position.
-function solveLpForCandidates(s, candidates, lsList, annualNRV, annualServes, targets){
-  const isMech = s.labourSystem === "mech";
-  const labourCap = s.hoursPerWeek * 52 * 1.15;
-
-  const activeNut = LP_TRACKED_NUTRIENTS.filter(n => annualNRV[n] > 0);
-  const activeFg  = LP_FOOD_GROUPS.filter(fg => annualServes[fg] > 0);
-  const activeMonthlyGroups = activeFg.filter(fg => LP_FRESH_GROUPS.includes(fg));
-
-  const nC = candidates.length, nL = lsList.length;
-  const nN = activeNut.length, nFg = activeFg.length;
-  const nM = MONTHS.length * activeMonthlyGroups.length;
-  const nVars = nC + nL + nN + nFg + nM;
-
-  // Index helpers — single source of truth for variable layout
-  const ix = {
-    crop:    i => i,
-    ls:      j => nC + j,
-    unmetN:  k => nC + nL + k,
-    unmetFg: k => nC + nL + nN + k,
-    unmetM:  (mIdx, gIdx) => nC + nL + nN + nFg + mIdx * activeMonthlyGroups.length + gIdx,
-  };
-
-  // ── Objective ──────────────────────────────────────────────────────────
-  // Resource cost (small) + tiered unmet penalties
-  //   M_NUT (10000)  — NRV nutrient shortfall, dominant
-  //   M_FG  (1000)   — annual food-group shortfall, secondary
-  //   M_MONTH (500)  — monthly variety shortfall, tertiary
-  const c = new Array(nVars).fill(0);
-  const RESOURCE_LAND   = 1.0;
-  const RESOURCE_LABOUR = 1/50000;
-  const M_NUT   = 10000;
-  const M_FG    = 1000;
-  const M_MONTH = 500;
-
-  candidates.forEach((cr,i) => {
-    const lph = cropLabour(cr, isMech);
-    c[ix.crop(i)] = RESOURCE_LAND + lph * RESOURCE_LABOUR;
-  });
-  lsList.forEach((ls,j) => {
-    c[ix.ls(j)] = (ls.space_m2_per_animal/10000) + (ls.labour_hrs_per_animal||0) * RESOURCE_LABOUR;
-  });
-  activeNut.forEach((_,k) => c[ix.unmetN(k)]  = M_NUT);
-  activeFg.forEach((_,k)  => c[ix.unmetFg(k)] = M_FG);
-  for(let mIdx = 0; mIdx < MONTHS.length; mIdx++){
-    for(let gIdx = 0; gIdx < activeMonthlyGroups.length; gIdx++){
-      c[ix.unmetM(mIdx, gIdx)] = M_MONTH;
-    }
-  }
-
-  // ── Constraints ────────────────────────────────────────────────────────
-  const rows = [];
-  const pushRow = (rowFn, op, rhs) => {
-    const row = new Array(nVars).fill(0);
-    rowFn(row);
-    if(row.some(v => Math.abs(v) > 1e-12)) rows.push({coef: row, op, rhs});
-  };
-
-  // Hard: per-zone area budgets (or single-budget fallback when no Site Model)
-  const budgets = s.siteModel ? siteModelBudgets(s.siteModel, s)
-    : { coolAnnualHa: s.annualHa, warmAnnualHa: s.annualHa,
-        canopyHa: s.perennialHa, treesHa: s.perennialHa, plantsHa: s.perennialHa };
-
-  pushRow(r => candidates.forEach((cr,i) => {
-    if(!cr.perennial && getCropSeason(cr) === "cool") r[ix.crop(i)] = 1;
-  }), "<=", budgets.coolAnnualHa);
-  pushRow(r => candidates.forEach((cr,i) => {
-    if(!cr.perennial && getCropSeason(cr) === "warm") r[ix.crop(i)] = 1;
-  }), "<=", budgets.warmAnnualHa);
-
-  // Hard: each perennial layer (canopy/trees/plants stacks on same ground)
-  const perBudgets = { canopy: budgets.canopyHa, trees: budgets.treesHa, plants: budgets.plantsHa };
-  ["canopy","trees","plants"].forEach(layer => {
-    pushRow(r => candidates.forEach((cr,i) => {
-      if(cr.perennial && cropLayer(cr) === layer) r[ix.crop(i)] = 1;
-    }), "<=", perBudgets[layer]);
-  });
-
-  // Gate: exclude crops not suitable for any zone when Site Model is present
-  if(s.siteModel){
-    candidates.forEach((cr,i)=>{
-      const suitable=s.siteModel.zones.some(z=>isCropSuitableForZone(cr,z));
-      if(!suitable){ pushRow(r=>{r[ix.crop(i)]=1;}, "<=", 0); }
-    });
-  }
-
-  // Hard: labour cap (crops + livestock)
-  pushRow(r => {
-    candidates.forEach((cr,i) => r[ix.crop(i)] = cropLabour(cr, isMech));
-    lsList.forEach((ls,j)    => r[ix.ls(j)]   = ls.labour_hrs_per_animal || 0);
-  }, "<=", labourCap);
-
-  // Hard: pasture cap
-  pushRow(r => lsList.forEach((ls,j) => r[ix.ls(j)] = ls.space_m2_per_animal/10000),
-          "<=", s.pastureHa || 0);
-
-  // Soft: per-nutrient annual NRV (with unmet slack)
-  activeNut.forEach((n,k) => {
-    const NRV = annualNRV[n];
-    pushRow(r => {
-      candidates.forEach((cr,i) => {
-        if(!cr.nut || !cr.nut[n]) return;
-        const adjY = subsistYield(cr, s.fertility, s.confidence);
-        r[ix.crop(i)] = adjY * 10000 * cr.nut[n] / NRV;
-      });
-      lsList.forEach((ls,j) => {
-        let total = 0;
-        lsNutContributions(ls).forEach(c => {
-          if(!c.nut || !c.nut[n]) return;
-          total += c.qty_per_animal_yr * c.nut[n] / 100;
-        });
-        r[ix.ls(j)] = total / NRV;
-      });
-      r[ix.unmetN(k)] = 1;
-    }, ">=", 1);
-  });
-
-  // Soft: per-food-group annual serves (with unmet slack)
-  activeFg.forEach((fg,k) => {
-    const targetA = annualServes[fg];
-    pushRow(r => {
-      candidates.forEach((cr,i) => {
-        if(FG_KEY[effectiveFoodGroup(cr)] !== fg) return;
-        const adjY = subsistYield(cr, s.fertility, s.confidence);
-        const sg = cr.serve_g || 75;
-        r[ix.crop(i)] = adjY * 1e6 / sg / targetA;
-      });
-      lsList.forEach((ls,j) => {
-        const total = fgToKey(ls.food_group) === fg ? lsServesPerDay(ls, 1) * 365 : 0;
-        r[ix.ls(j)] = total / targetA;
-      });
-      r[ix.unmetFg(k)] = 1;
-    }, ">=", 1);
-  });
-
-  // Soft: SEASONAL VARIETY — for each (month, fresh group), require ≥50% of
-  // daily target supplied in that month. Forces year-round fresh supply.
-  // Crop contribution distributed across harvest months by P/S weights.
-  // Livestock contribution treated as constant year-round.
-  MONTHS.forEach((m, mIdx) => {
-    activeMonthlyGroups.forEach((fg, gIdx) => {
-      const dailyTarget = targets[fg] || 0;
-      if(dailyTarget <= 0) return;
-      const monthlyThreshold = 0.5;
-
-      pushRow(r => {
-        candidates.forEach((cr,i) => {
-          if(FG_KEY[effectiveFoodGroup(cr)] !== fg) return;
-          const adjY = subsistYield(cr, s.fertility, s.confidence);
-          const sg = cr.serve_g || 75;
-          const annualServesPerHa = adjY * 1e6 / sg;
-
-          // Harvest distribution weight
-          let totalW = 0;
-          MONTHS.forEach(mm => {
-            const v = cr.months[mm];
-            totalW += v === "P" ? 1 : v === "S" ? 0.5 : 0;
-          });
-          if(totalW === 0) return;
-
-          const v = cr.months[m];
-          const monthW = v === "P" ? 1 : v === "S" ? 0.5 : 0;
-          if(monthW === 0) return;
-
-          // Daily serves contributed in this month per ha of this crop
-          const dailyInMonth = annualServesPerHa * (monthW / totalW) / 30;
-          r[ix.crop(i)] = dailyInMonth / dailyTarget;
-        });
-        // Livestock contribution: assume year-round constant supply
-        lsList.forEach((ls,j) => {
-          const dailyServes = fgToKey(ls.food_group) === fg ? lsServesPerDay(ls, 1) : 0;
-          r[ix.ls(j)] = dailyServes / dailyTarget;
-        });
-        r[ix.unmetM(mIdx, gIdx)] = 1;
-      }, ">=", monthlyThreshold);
-    });
-  });
-
-  // ── DIETARY REALISM CAPS — REMOVED ─────────────────────────────────────
-  // Per-food and per-group serve caps (50% group cap, 2 serves/person absolute,
-  // discretionary honey cap) have been removed. Diversity is driven by the monthly
-  // fresh-coverage constraints instead of arbitrary fractions. Watch rendered LP
-  // plans for single-source domination; if it appears, strengthen fresh-coverage
-  // constraints rather than reinstating a flat percentage cap.
-
-  // ── Solve ──────────────────────────────────────────────────────────────
-  const lp = lpSolveBigM({
-    c: c,
-    A: rows.map(r => r.coef),
-    ops: rows.map(r => r.op),
-    b: rows.map(r => r.rhs),
-  });
-
-  return { lp, candidates, lsList, activeNut, activeFg, activeMonthlyGroups, ix };
-}
-
-// ── Outer LP plan generator with progressive-tier solving ──────────────────
-function generatePlanLP(s){
-  const annualBudget = s.hoursPerWeek * 52;
-  const targets = calcTotals(s.household);
-
-  // Full candidate pool (filtered by isSuitable + checked + non-herb + yielding)
-  const allCandidates = CROP_DATA
-    .filter(c => isSuitable(c) && s.checkedCrops && s.checkedCrops.has(c.name) && !HERB_EXCLUSIONS.has(c.name))
-    .filter(c => cropPriorityTier(c) > 0)
-    .filter(c => subsistYield(c, s.fertility, s.confidence) > 0);
-
-  const lsList = LIVESTOCK_DATA.filter(ls => (s.checkedLivestock||new Set()).has(ls.name));
-
-  if(allCandidates.length === 0 && lsList.length === 0){
-    return emptyLpPlan(s, targets, annualBudget, "no_candidates");
-  }
-
-  // Compute targets once (constant across tier iterations)
-  const dailyNRV = householdNRV(s.household);
-  const annualNRV = {};
-  LP_TRACKED_NUTRIENTS.forEach(n => annualNRV[n] = (dailyNRV[n]||0) * 365);
-  const annualServes = {};
-  LP_FOOD_GROUPS.forEach(fg => annualServes[fg] = (targets[fg]||0) * 365);
-
-  // ── TIER ITERATION ───────────────────────────────────────────────────────
-  // Try tier 2 (Ideal) only first. If any nutrient is < 85% of NRV, drop the
-  // floor to tier 1 (Suitable) so the full hard-gate-passing pool is available.
-  // Livestock is always available.
-  const COVERAGE_THRESHOLD = 0.15; // unmet < 0.15 ≡ ≥ 85% of NRV
-  const tierAttempts = [];
-  let bestData = null;
-  let usedTier = 1;
-
-  for(const minTier of [2, 1]){
-    const tieredCands = allCandidates.filter(c => cropPriorityTier(c) >= minTier);
-    if(tieredCands.length === 0 && lsList.length === 0){
-      tierAttempts.push({tier: minTier, label: LP_TIER_LABELS[minTier], cropCount: 0, allCovered: false, uncovered: []});
-      continue;
-    }
-
-    const data = solveLpForCandidates(s, tieredCands, lsList, annualNRV, annualServes, targets);
-    const nC = tieredCands.length, nL = lsList.length;
-
-    const uncovered = data.activeNut
-      .map((n, k) => ({n, unmet: data.lp.x[nC + nL + k] || 0}))
-      .filter(x => x.unmet >= COVERAGE_THRESHOLD)
-      .map(x => NUTRIENT_LABELS[x.n] || x.n);
-
-    const allCovered = uncovered.length === 0 && data.lp.status === "optimal";
-    tierAttempts.push({tier: minTier, label: LP_TIER_LABELS[minTier],
-                       cropCount: tieredCands.length, allCovered, uncovered});
-
-    bestData = data;
-    usedTier = minTier;
-    if(allCovered) break;
-  }
-
-  if(!bestData){
-    return emptyLpPlan(s, targets, annualBudget, "no_candidates");
-  }
-
-  const plan = buildPlanFromLP(s, bestData, annualBudget, targets);
-  plan.lpInfo.usedTier = usedTier;
-  plan.lpInfo.usedTierLabel = LP_TIER_LABELS[usedTier];
-  plan.lpInfo.tierAttempts = tierAttempts;
-  return plan;
-}
-
-function emptyLpPlan(s, targets, annualBudget, reason){
-  const monthCoverage = {};
-  MONTHS.forEach(m => monthCoverage[m] = zeroFG());
-  return {
-    selected: [], lsSelected: [], achieved: zeroFG(),
-    targets, usedCoolHa:0, usedWarmHa:0, usedAnnualHa:0, usedPerennialHa:0, usedPerennialHaSum:0,
-    layers: {canopy:0,trees:0,plants:0}, usedLabour:0, usedPastureHa:0,
-    annualBudget, monthCoverage, suitableCount: 0,
-    p15NutsCovered: [], p15GapNamesAll: [],
-    lpInfo: { status: reason, nutrientsCovered: [], nutrientsUnderSupplied: [],
-              tierAttempts: [], monthlyGaps: [], tierBreakdown: {} }
-  };
-}
-
-function buildPlanFromLP(s, data, annualBudget, targets){
-  const isMech = s.labourSystem === "mech";
-  const {candidates, lsList, activeNut, activeMonthlyGroups, ix, lp} = data;
-  const nC = candidates.length, nL = lsList.length;
-
-  const selected = [];
-  const lsSelected = [];
-  const achieved = zeroFG();
-  const monthCoverage = {};
-  MONTHS.forEach(m => monthCoverage[m] = zeroFG());
-
-  let usedCoolHa=0, usedWarmHa=0;
-  let usedCanopyHa=0, usedTreesHa=0, usedPerennialPlantsHa=0;
-  let usedLabour=0, usedPastureHa=0;
-  const tierBreakdown = {2:0, 1:0};
-
-  const MIN_HA = 0.0005;
-
-  // ── Crops ────────────────────────────────────────────────────────────────
-  candidates.forEach((crop, i) => {
-    const ha = lp.x[i] || 0;
-    if(ha < MIN_HA) return;
-    const adjY = subsistYield(crop, s.fertility, s.confidence);
-    const annualKg = ha * adjY * 1000;
-    const totalServesYr = annualKg * 1000 / (crop.serve_g || 75);
-    const dailyServes = totalServesYr / 365;
-    const lph = cropLabour(crop, isMech);
-    const labour = lph * ha;
-    const cropTier = cropPriorityTier(crop);
-    tierBreakdown[cropTier] = (tierBreakdown[cropTier] || 0) + 1;
-
-    const fg = effectiveFoodGroup(crop);
-    const fgKey = FG_KEY[fg];
-    if(fgKey && achieved[fgKey] !== undefined) achieved[fgKey] += dailyServes;
-
-    // Monthly coverage
-    let hw = 0;
-    MONTHS.forEach(m => { if(crop.months[m] === "P") hw += 1; else if(crop.months[m] === "S") hw += 0.5; });
-    if(hw > 0 && fgKey){
-      const perMonth = totalServesYr / hw / 30;
-      MONTHS.forEach(m => {
-        const v = crop.months[m];
-        const w = v === "P" ? 1 : v === "S" ? 0.5 : 0;
-        if(w > 0) monthCoverage[m][fgKey] += perMonth * w;
-      });
-    }
-
-    // Byproducts
-    if(crop.byproducts){
-      crop.byproducts.forEach(bp => {
-        const bpY = adjY * (bp.yield_fraction || 0);
-        const bpServesYr = ha * bpY * 1e6 / 75;
-        const bpKey = fgToKey(bp.food_group);
-        if(bpKey && achieved[bpKey] !== undefined){
-          achieved[bpKey] += bpServesYr / 365;
-          const bpMonths = bp.months || crop.months;
-          let bpW = 0;
-          MONTHS.forEach(m => { if(bpMonths[m]==='P') bpW+=1; else if(bpMonths[m]==='S') bpW+=0.5; });
-          if(bpW > 0){
-            const bpBase = bpServesYr / bpW / 30;
-            MONTHS.forEach(m => {
-              const v = bpMonths[m];
-              const w = v==='P'?1:v==='S'?0.5:0;
-              if(w > 0) monthCoverage[m][bpKey] += bpBase * w;
-            });
-          }
-        }
-      });
-    }
-
-    selected.push({crop, allocHa: ha, serves: dailyServes, labour, tier: cropTier});
-    usedLabour += labour;
-    if(crop.perennial){
-      const layer = cropLayer(crop);
-      if(layer === "canopy") usedCanopyHa += ha;
-      else if(layer === "trees") usedTreesHa += ha;
-      else usedPerennialPlantsHa += ha;
-    } else {
-      const season = getCropSeason(crop);
-      if(season === "warm") usedWarmHa += ha;
-      else usedCoolHa += ha;
-    }
-  });
-
-  // ── Livestock (LP gives continuous, round to ls.step) ────────────────────
-  lsList.forEach((ls, j) => {
-    const raw = lp.x[nC + j] || 0;
-    if(raw < (ls.min_count || 1) * 0.5) return;
-    const step = ls.step || 1;
-    const minC = ls.min_count || 0;
-    let count = Math.max(minC, Math.round(raw / step) * step);
-    if(count <= 0) return;
-    const spd = lsServesPerDay(ls, count);
-    const key = fgToKey(ls.food_group);
-    if(key && achieved[key] !== undefined){
-      achieved[key] += spd;
-      MONTHS.forEach(m => { if(monthCoverage[m][key] !== undefined) monthCoverage[m][key] += spd; });
-    }
-    usedLabour += (ls.labour_hrs_per_animal||0) * count;
-    usedPastureHa += ls.space_m2_per_animal * count / 10000;
-    lsSelected.push({ls, count});
-  });
-
-  // ── Nutrient diagnostics ─────────────────────────────────────────────────
-  const nutCovered = [];
-  const nutUnder = [];
-  activeNut.forEach((n, k) => {
-    const unmet = lp.x[ix.unmetN(k)] || 0;
-    const pct = Math.max(0, Math.round((1 - unmet) * 100));
-    if(unmet < 0.15) nutCovered.push(NUTRIENT_LABELS[n] || n);
-    else nutUnder.push({name: NUTRIENT_LABELS[n] || n, pct});
-  });
-
-  // ── Monthly variety diagnostics ──────────────────────────────────────────
-  // Compute actual % of daily target supplied each (month, fresh group)
-  // and list months that fall short of the 50% threshold.
-  const monthlyGaps = [];
-  MONTHS.forEach((m) => {
-    activeMonthlyGroups.forEach((fg) => {
-      const dailyTarget = targets[fg] || 0;
-      if(dailyTarget <= 0) return;
-      const supplied = monthCoverage[m][fg] || 0;
-      const pct = Math.round(100 * supplied / dailyTarget);
-      if(pct < 50) monthlyGaps.push({month: m, group: fg, pct});
-    });
-  });
-
-  const perennialFootprintVal = Math.max(usedCanopyHa, usedTreesHa, usedPerennialPlantsHa);
-
-  return {
-    selected, lsSelected, achieved, targets,
-    usedCoolHa, usedWarmHa, usedAnnualHa: usedCoolHa + usedWarmHa,
-    usedPerennialHa: perennialFootprintVal,
-    usedPerennialHaSum: usedCanopyHa + usedTreesHa + usedPerennialPlantsHa,
-    layers: {canopy: usedCanopyHa, trees: usedTreesHa, plants: usedPerennialPlantsHa},
-    usedLabour, usedPastureHa, annualBudget, monthCoverage,
-    suitableCount: candidates.length,
-    p15NutsCovered: [], p15GapNamesAll: [],
-    lpInfo: {
-      status: lp.status,
-      objective: lp.objective,
-      nutrientsCovered: nutCovered,
-      nutrientsUnderSupplied: nutUnder.sort((a,b) => a.pct - b.pct),
-      monthlyGaps,
-      tierBreakdown,
-    }
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PARETO EXPLORER — NSGA-II multi-objective optimisation
-// ═══════════════════════════════════════════════════════════════
-
-const PARETO_OBJ = {
-  yield:{
-    label:"Total Yield", unit:"t/yr", maximize:true,
-    fn(plan){
-      const kg=plan.selected.reduce((s,{crop,allocHa})=>s+subsistYield(crop,state.fertility,state.confidence)*1000*allocHa,0);
-      return Math.round(kg/100)/10;
-    }
-  },
-  space:{
-    label:"Land Used", unit:"ha", maximize:false,
-    fn(plan){return +((plan.usedAnnualHa+plan.usedPerennialHa).toFixed(3));}
-  },
-  labour:{
-    label:"Labour", unit:"hrs/yr", maximize:false,
-    fn(plan){return Math.round(plan.usedLabour);}
-  },
-  gaps:{
-    label:"Fresh Supply Gaps", unit:"gap-months", maximize:false,
-    fn(plan,targets){
-      // Count month×foodgroup combinations where fresh coverage < 50% of target
-      const mo={};MONTHS.forEach(m=>mo[m]=zeroFG());
-      plan.selected.forEach(({crop,serves})=>{
-        const key=fgToKey(effectiveFoodGroup(crop));
-        if(!key||mo["jan"][key]===undefined)return;
-        MONTHS.forEach(m=>{
-          const v=crop.months[m];
-          if(v==="P")mo[m][key]+=serves;
-          else if(v==="S")mo[m][key]+=serves*0.5;
-        });
-      });
-      let gaps=0;
-      FLOOR_KEYS.forEach(k=>{
-        if(!targets[k])return;
-        MONTHS.forEach(m=>{if(mo[m][k]<targets[k]*0.5)gaps++;});
-      });
-      return gaps;
-    }
-  },
-};
-
-// Decode genome → plan metrics
-function decodePlanNSGA(genome, cropList, st, targets){
-  const isMech=st.labourSystem==="mech";
-  const annuals=[],perennials=[];
-  cropList.forEach((crop,i)=>{
-    if(genome[i]>0.15)(crop.perennial?perennials:annuals).push({crop,gene:genome[i]});
-  });
-  const selected=[];
-  function alloc(group,maxHa){
-    if(!group.length||maxHa<=0)return 0;
-    const tot=group.reduce((s,x)=>s+x.gene,0);
-    let used=0;
-    group.forEach(({crop,gene})=>{
-      const allocHa=Math.min(gene/tot*maxHa, maxHa-used);
-      if(allocHa<0.001)return;
-      const adjYield=subsistYield(crop,st.fertility,st.confidence);
-      if(!adjYield)return;
-      const serves=allocHa*adjYield*1000/(crop.serve_g||75)/365;
-      selected.push({crop,allocHa,serves});
-      used+=allocHa;
-    });
-    return used;
-  }
-  const usedAnnualHa=alloc(annuals,st.annualHa);
-  const usedPerennialHa=alloc(perennials,st.perennialHa);
-  const achieved=zeroFG();
-  selected.forEach(({crop,serves})=>{
-    const key=fgToKey(effectiveFoodGroup(crop));
-    if(key && achieved[key]!==undefined) achieved[key]+=serves;
-  });
-  const usedLabour=selected.reduce((s,{crop,allocHa})=>s+cropLabour(crop,isMech)*allocHa,0);
-  // Check food group minimum % constraints
-  const fgMin=st.foodGroupMin||{};
-  const targets2=calcTotals(st.household);
-  const feasible=FLOOR_KEYS.every(k=>{
-    const min=fgMin[k]||0;
-    if(!min||!targets2[k])return true;
-    return (achieved[k]||0)>=(targets2[k]*(min/100));
-  });
-  return{selected,achieved,usedAnnualHa,usedPerennialHa,usedLabour,feasible};
-}
-
-// NSGA-II non-dominated sort
-function nsgaSort(pop,o1k,o2k){
-  const o1=PARETO_OBJ[o1k],o2=PARETO_OBJ[o2k];
-  function dom(a,b){
-    // Infeasible solutions are dominated by all feasible ones
-    if(a.plan.feasible && !b.plan.feasible) return true;
-    if(!a.plan.feasible && b.plan.feasible) return false;
-    const ge1=o1.maximize?a.s1>=b.s1:a.s1<=b.s1,ge2=o2.maximize?a.s2>=b.s2:a.s2<=b.s2;
-    const gt1=o1.maximize?a.s1>b.s1:a.s1<b.s1,gt2=o2.maximize?a.s2>b.s2:a.s2<b.s2;
-    return ge1&&ge2&&(gt1||gt2);
-  }
-  const n=pop.length,cnt=Array(n).fill(0),sets=Array.from({length:n},()=>[]);
-  const fronts=[[]];
-  for(let i=0;i<n;i++)for(let j=0;j<n;j++){
-    if(i===j)continue;
-    if(dom(pop[i],pop[j]))sets[i].push(j);
-    else if(dom(pop[j],pop[i]))cnt[i]++;
-  }
-  for(let i=0;i<n;i++){if(cnt[i]===0){pop[i].rank=0;fronts[0].push(i);}}
-  let fi=0;
-  while(fronts[fi]&&fronts[fi].length){
-    const next=[];
-    fronts[fi].forEach(i=>sets[i].forEach(j=>{if(--cnt[j]===0){pop[j].rank=fi+1;next.push(j);}}));
-    if(next.length)fronts.push(next);fi++;
-  }
-  return fronts;
-}
-
-function crowdDist(pop,fi,o1k,o2k){
-  const n=fi.length;if(n<=2){fi.forEach(i=>pop[i].dist=Infinity);return;}
-  fi.forEach(i=>pop[i].dist=0);
-  ["s1","s2"].forEach(sk=>{
-    const sorted=[...fi].sort((a,b)=>pop[a][sk]-pop[b][sk]);
-    pop[sorted[0]].dist=pop[sorted[n-1]].dist=Infinity;
-    const rng=pop[sorted[n-1]][sk]-pop[sorted[0]][sk]||1;
-    for(let i=1;i<n-1;i++)
-      pop[sorted[i]].dist+=(pop[sorted[i+1]][sk]-pop[sorted[i-1]][sk])/rng;
-  });
-}
-
-function tournNSGA(pop){
-  const a=pop[Math.floor(Math.random()*pop.length)];
-  const b=pop[Math.floor(Math.random()*pop.length)];
-  if(a.rank!==b.rank)return a.rank<b.rank?a:b;
-  return a.dist>=b.dist?a:b;
-}
-
-function runNSGAII(st,o1k,o2k,popSize=80,gens=70){
-  const cropList=CROP_DATA.filter(c=>st.checkedCrops&&st.checkedCrops.has(c.name)&&!HERB_EXCLUSIONS.has(c.name));
-  if(!cropList.length)return{paretoFront:[],allSolutions:[]};
-  const targets=calcTotals(st.household);
-  const N=cropList.length;
-
-  function evalInd(ind){
-    ind.plan=decodePlanNSGA(ind.genome,cropList,st,targets);
-    ind.s1=PARETO_OBJ[o1k].fn(ind.plan,targets,st);
-    ind.s2=PARETO_OBJ[o2k].fn(ind.plan,targets,st);
-    ind.rank=0;ind.dist=0;
-  }
-
-  let pop=Array.from({length:popSize},()=>{
-    const ind={genome:Array.from({length:N},()=>Math.random())};
-    evalInd(ind);return ind;
-  });
-
-  for(let g=0;g<gens;g++){
-    const off=[];
-    while(off.length<popSize){
-      const p1=tournNSGA(pop),p2=tournNSGA(pop);
-      const a=Math.random();
-      const mr=1.5/N;
-      const mutate=genome=>genome.map(v=>Math.random()<mr?Math.max(0,Math.min(1,v+(Math.random()-0.5)*0.35)):v);
-      const c1={genome:mutate(p1.genome.map((v,i)=>Math.max(0,Math.min(1,a*v+(1-a)*p2.genome[i]))))};
-      const c2={genome:mutate(p1.genome.map((v,i)=>Math.max(0,Math.min(1,(1-a)*v+a*p2.genome[i]))))};
-      evalInd(c1);evalInd(c2);off.push(c1,c2);
-    }
-    const comb=[...pop,...off];
-    const fronts=nsgaSort(comb,o1k,o2k);
-    fronts.forEach(f=>crowdDist(comb,f,o1k,o2k));
-    comb.sort((a,b)=>a.rank!==b.rank?a.rank-b.rank:b.dist-a.dist);
-    pop=comb.slice(0,popSize);
-  }
-  const fronts=nsgaSort(pop,o1k,o2k);
-  const paretoFront=fronts[0].map(i=>pop[i]).sort((a,b)=>a.s1-b.s1);
-  return{paretoFront,allSolutions:pop};
-}
-
-// ── Pareto chart SVG ────────────────────────────────────────────
-function renderParetoChart(result,o1k,o2k,selIdx){
-  const{paretoFront,allSolutions}=result;
-  const o1=PARETO_OBJ[o1k],o2=PARETO_OBJ[o2k];
-  const W=560,H=380,PL=62,PR=20,PT=20,PB=52;
-  const iW=W-PL-PR,iH=H-PT-PB;
-  const xs=allSolutions.map(s=>s.s1),ys=allSolutions.map(s=>s.s2);
-  const x0=Math.min(...xs),x1=Math.max(...xs);
-  const y0=Math.min(...ys),y1=Math.max(...ys);
-  const sx=v=>PL+(v-x0)/(x1-x0||1)*iW;
-  const sy=v=>PT+iH-(v-y0)/(y1-y0||1)*iH;
-  // dominated dots
-  const domDots=allSolutions.filter(s=>s.rank>0)
-    .map(s=>`<circle cx="${sx(s.s1).toFixed(1)}" cy="${sy(s.s2).toFixed(1)}" r="3.5" fill="#AECE80" opacity="0.45"/>`).join("");
-  // pareto line
-  const pts=paretoFront.map(s=>`${sx(s.s1).toFixed(1)},${sy(s.s2).toFixed(1)}`).join(" ");
-  const line=paretoFront.length>1?`<polyline points="${pts}" fill="none" stroke="#5C7A3A" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>`:"";
-  // pareto dots
-  const pdots=paretoFront.map((s,i)=>{
-    const sel=i===selIdx;
-    return`<circle cx="${sx(s.s1).toFixed(1)}" cy="${sy(s.s2).toFixed(1)}" r="${sel?8:5.5}"
-      fill="${sel?"#3A5224":"#5C7A3A"}" stroke="${sel?"#1A2E0E":"#2E5018"}" stroke-width="${sel?2.5:1}"
-      style="cursor:pointer" onclick="selectPareto(${i})"
-      data-tip="${o1.label}: ${s.s1} ${o1.unit} | ${o2.label}: ${s.s2} ${o2.unit} | ${s.plan.selected.length} crops"/>`;
-  }).join("");
-  // axes + ticks
-  function ticks(lo,hi,n=4){const d=(hi-lo)/(n-1);return Array.from({length:n},(_,i)=>lo+i*d);}
-  const xTks=ticks(x0,x1).map(v=>`<text x="${sx(v).toFixed(1)}" y="${PT+iH+18}" text-anchor="middle" font-size="11" fill="#A89878">${Math.round(v)}</text>`).join("");
-  const yTks=ticks(y0,y1).map(v=>`<text x="${PL-7}" y="${(sy(v)+4).toFixed(1)}" text-anchor="end" font-size="11" fill="#A89878">${Math.round(v)}</text>`).join("");
-  const xGrid=ticks(x0,x1).map(v=>`<line x1="${sx(v).toFixed(1)}" y1="${PT}" x2="${sx(v).toFixed(1)}" y2="${PT+iH}" stroke="#D8CEB0" stroke-width="1"/>`).join("");
-  const yGrid=ticks(y0,y1).map(v=>`<line x1="${PL}" y1="${sy(v).toFixed(1)}" x2="${PL+iW}" y2="${sy(v).toFixed(1)}" stroke="#D8CEB0" stroke-width="1"/>`).join("");
-  return`<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:${W}px;display:block;border:2px solid var(--border);border-radius:4px">
-    <rect width="${W}" height="${H}" fill="#F5F0E4"/>
-    ${xGrid}${yGrid}
-    <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+iH}" stroke="#A89878" stroke-width="1.5"/>
-    <line x1="${PL}" y1="${PT+iH}" x2="${PL+iW}" y2="${PT+iH}" stroke="#A89878" stroke-width="1.5"/>
-    ${xTks}${yTks}
-    <text x="${PL+iW/2}" y="${H-8}" text-anchor="middle" font-size="12" font-weight="500" fill="#7A6A54">${o1.label} (${o1.unit})${o1.maximize?" →↑":""}</text>
-    <text x="13" y="${PT+iH/2}" text-anchor="middle" font-size="12" font-weight="500" fill="#7A6A54" transform="rotate(-90,13,${PT+iH/2})">${o2.label} (${o2.unit})${o2.maximize?" ↑":""}</text>
-    ${domDots}${line}${pdots}
-    <circle cx="${PL+iW-80}" cy="${PT+14}" r="5" fill="#AECE80" opacity="0.7"/>
-    <text x="${PL+iW-72}" y="${PT+18}" font-size="10" fill="#7A6A54">Dominated</text>
-    <circle cx="${PL+iW-20}" cy="${PT+14}" r="5" fill="#5C7A3A"/>
-    <text x="${PL+iW-12}" y="${PT+18}" font-size="10" fill="#5C7A3A">Pareto front</text>
-  </svg>`;
-}
-
-// ── Pareto plan card ─────────────────────────────────────────────
-function renderParetoDetail(sol,o1k,o2k){
-  const o1=PARETO_OBJ[o1k],o2=PARETO_OBJ[o2k];
-  const plan=sol.plan;
-  const targets=calcTotals(state.household);
-  const fgs=FG_DISPLAY_ROWS;
-  const bars=fgs.map(([l,k,c])=>{
-    const p=targets[k]?Math.min(200,Math.round((plan.achieved[k]||0)/targets[k]*100)):0;
-    return`<div class="cov-row"><div class="cov-lbl"><span class="tag ${c}">${l}</span></div>
-      <div class="cov-bar-bg"><div class="cov-bar-fill ${p>=100?"full":""}" style="width:${Math.min(p,100)}%"></div></div>
-      <div class="cov-pct">${p}%</div></div>`;
-  }).join("");
-  const cropRows=plan.selected.map(({crop,allocHa,serves})=>{
-    const cropSuit=isSuitable(crop);
-    const pc=plantCount(crop,allocHa);
-    const yKg=Math.round(subsistYield(crop,state.fertility,state.confidence)*1000*allocHa);
-    const yLbl=yKg>=1000?(yKg/1000).toFixed(1)+"t":yKg+"kg";
-    return`<div class="crop-row">
-      <span class="crop-name">${crop.name}</span>
-      ${tag(effectiveFoodGroup(crop))}
-      <span class="area-badge">${fmtHa(allocHa)}</span>
-      ${cropSuit?`<span class="suit-yes">✓</span>`:`<span class="suit-no">✗</span>`}
-      <span class="plant-count-badge" title="${pc.note}">${pc.label}</span>
-      <span class="yield-badge">${yLbl}/yr</span>
-      <span class="srv-label">${serves.toFixed(1)} srv/day</span>
-      <div class="month-wrap">${monthBar(crop.months)}</div>
-    </div>`;
-  }).join("");
-  return`<div class="card" style="margin-top:12px">
-    <h2>Selected plan — ${o1.label}: <span style="color:var(--green)">${sol.s1} ${o1.unit}</span> &nbsp;·&nbsp; ${o2.label}: <span style="color:var(--green)">${sol.s2} ${o2.unit}</span></h2>
-    <p class="card-desc">${plan.selected.length} crops · ${fmtHa(plan.usedAnnualHa)} annual · ${fmtHa(plan.usedPerennialHa)} perennial · ${Math.round(plan.usedLabour).toLocaleString()} hrs/yr labour</p>
-    ${bars}
-    <div style="margin-top:12px">${cropRows}</div>
-  </div>`;
-}
-
-function selectPareto(i){
-  state.paretoSelected=i;
-  // Re-render just the chart + detail without full app render
-  const chartEl=document.getElementById("paretoChart");
-  if(chartEl&&state.paretoResult)
-    chartEl.innerHTML=renderParetoChart(state.paretoResult,state.paretoObj1,state.paretoObj2,i);
-  const detailEl=document.getElementById("paretoDetail");
-  if(detailEl&&state.paretoResult)
-    detailEl.innerHTML=renderParetoDetail(state.paretoResult.paretoFront[i],state.paretoObj1,state.paretoObj2);
-}
-
-function startPareto(){
-  if(state.paretoObj1===state.paretoObj2){
-    alert("Please choose two different objectives.");return;
-  }
-  state.paretoRunning=true;
-  state.paretoResult=null;
-  state.paretoSelected=null;
-  renderApp();
-  // Defer to let UI update
-  setTimeout(()=>{
-    state.paretoResult=runNSGAII(state,state.paretoObj1,state.paretoObj2);
-    state.paretoRunning=false;
-    state.paretoSelected=0;
-    renderApp();
-  },30);
-}
 
 // ── Render helpers ─────────────────────────────────────────
 function tag(fg){return`<span class="tag ${FG_TAG[fg]||"tag-disc"}">${FG_SHORT[fg]||fg}</span>`}
@@ -3970,77 +3396,6 @@ function renderStep3(){
     </div>`;
 }
 
-function renderParetoStep(){
-  const selOpts=(sel,exclude)=>Object.entries(PARETO_OBJ).map(([k,o])=>
-    `<option value="${k}" ${sel===k?"selected":""} ${k===exclude?"disabled":""}>
-      ${o.maximize?"↑":"↓"} ${o.label}</option>`).join("");
-
-  const fgSliders=FLOOR_KEYS.map(k=>`
-    <div>
-      <label style="display:flex;justify-content:space-between">
-        <span>${FG_DISPLAY[k].label}</span>
-        <strong style="color:var(--green)">${state.foodGroupMin[k]||0}% min</strong>
-      </label>
-      <input type="range" min="0" max="100" step="10" value="${state.foodGroupMin[k]||0}"
-        oninput="state.foodGroupMin['${k}']=+this.value;this.previousElementSibling.querySelector('strong').textContent=this.value+'% min'"/>
-    </div>`).join("");
-
-  const chartSection=state.paretoRunning
-    ?`<div class="card" style="text-align:center;padding:36px">
-        <div style="font-size:18px;margin-bottom:8px;color:var(--green-dk)">Evolving farm plans…</div>
-        <div style="font-size:13px;color:var(--text-mid)">NSGA-II · ${state.checkedCrops?state.checkedCrops.size:0} crops · 80 plans · 70 generations</div>
-      </div>`
-    :state.paretoResult
-      ?`<div class="card">
-          <h2>Trade-off frontier</h2>
-          <p class="card-desc">
-            <strong style="color:var(--green-dk)">${state.paretoResult.paretoFront.length}</strong> Pareto-optimal plans on the frontier
-            from ${state.paretoResult.allSolutions.length} evaluated.
-            Pale dots are valid but dominated plans. Click a <strong style="color:var(--green)">●</strong> on the frontier to view that plan below.
-          </p>
-          <div id="paretoChart" style="overflow-x:auto">${renderParetoChart(state.paretoResult,state.paretoObj1,state.paretoObj2,state.paretoSelected)}</div>
-        </div>
-        ${state.paretoSelected!==null
-          ?`<div id="paretoDetail">${renderParetoDetail(state.paretoResult.paretoFront[state.paretoSelected],state.paretoObj1,state.paretoObj2)}</div>`
-          :`<div class="alert alert-info">Click a point on the chart above to view that farm plan.</div>`}`
-      :"";
-
-  return`
-    <div class="card">
-      <h2>Set up trade-off explorer</h2>
-      <p class="card-desc">
-        Pick two objectives to plot against each other. The evolutionary model will find the full set of trade-off plans — every point where improving one objective would require sacrificing the other.
-      </p>
-      <div class="two-col" style="margin-bottom:16px">
-        <div>
-          <label>X axis</label>
-          <select onchange="state.paretoObj1=this.value;state.paretoResult=null">
-            ${selOpts(state.paretoObj1, state.paretoObj2)}
-          </select>
-          <div style="font-size:11px;color:var(--text-mid);margin-top:3px">${PARETO_OBJ[state.paretoObj1]?.maximize?"Higher is better":"Lower is better"}</div>
-        </div>
-        <div>
-          <label>Y axis</label>
-          <select onchange="state.paretoObj2=this.value;state.paretoResult=null">
-            ${selOpts(state.paretoObj2, state.paretoObj1)}
-          </select>
-          <div style="font-size:11px;color:var(--text-mid);margin-top:3px">${PARETO_OBJ[state.paretoObj2]?.maximize?"Higher is better":"Lower is better"}</div>
-        </div>
-      </div>
-      <div style="margin-bottom:16px">
-        <label style="margin-bottom:8px;display:block">Minimum food group coverage (hard constraints)</label>
-        <p style="font-size:12px;color:var(--text-mid);margin-bottom:10px">Plans that don't meet these minimums are excluded from the frontier. Set to 0 for no constraint.</p>
-        <div class="two-col">${fgSliders}</div>
-      </div>
-      <button class="btn btn-lg" onclick="startPareto()" ${state.paretoRunning?"disabled":""} style="width:100%">
-        ${state.paretoRunning?"Running…":"Run trade-off optimisation"}
-      </button>
-    </div>
-    ${chartSection}
-    <div class="nav-row">
-      <button class="btn btn-sec" onclick="goStep(4)">← Crop selection</button>
-    </div>`;
-}
 
 // Sortable crop table view for the Farm Plan
 function renderCropsTable(crops){
@@ -4117,9 +3472,13 @@ function sortCropsTable(col){
 function renderStep4(){
   // Generate plan if not cached. Use LP solver if nutrient-LP mode is active.
   if(!state.plan){
-    state.plan = (state.objectives && state.objectives.nutrientLP === "on")
-      ? generatePlanLP(state)
-      : generatePlan(state);
+    state.plan = generatePlan(state);
+    // Stage-6 step 1: once the nutrition plan exists, site its crops onto the real
+    // per-facet areas (only when a Site Model is present). Never alters the plan's
+    // crop quantities — placement is strictly downstream of allocation.
+    if(state.plan && state.siteModel){
+      state.plan.placement = placeCropsOnFacets(state.plan, state.siteModel, state);
+    }
   }
   const p = state.plan;
 
@@ -4196,10 +3555,8 @@ function renderStep4(){
         ${(()=>{
           const mode = getObjMode();
           const modeObj = OBJECTIVES.find(o => o.key === mode) || OBJECTIVES[0];
-          const isLP = mode === "nutrientLP";
-          // Pill colour: LP uses a distinct treatment to flag the different solver
-          const bg = isLP ? "var(--green)" : "var(--clay)";
-          const fg = isLP ? "white" : "var(--text)";
+          const bg = "var(--clay)";
+          const fg = "var(--text)";
           return `<div style="margin:6px 0 4px 0">
             <span style="display:inline-block;background:${bg};color:${fg};font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:3px 9px;border:1px solid var(--border-dk)">Mode: ${modeObj.label}</span>
             <span style="font-size:11px;color:#D6E1BD;margin-left:8px;font-style:italic">${modeObj.desc}</span>
@@ -4357,39 +3714,6 @@ function renderStep4(){
         but land and labour budgets were fully used by Phase 1. To address these gaps, increase your annual or perennial land area,
         or add livestock for nutrients like B12, iron, and zinc.
       </div>` : ""}
-      ${p.lpInfo ? (()=>{
-        const li = p.lpInfo;
-        const tb = li.tierBreakdown || {};
-        const tbParts = [2,1].filter(t => tb[t] > 0).map(t => `${tb[t]} ${LP_TIER_LABELS[t]}`);
-        const tierLine = li.usedTierLabel ?
-          `<div style="font-size:12px;margin-top:4px">Suitability tier floor: <strong>${li.usedTierLabel}</strong> (tier ${li.usedTier}) — ${
-            li.usedTier === 2 ? "Ideal crops (optimal soil and temperature) alone met the NRVs." :
-                                "needed to include all Suitable crops, not just Ideal ones, to meet the NRVs."
-          }${tbParts.length ? ` Plan composition: ${tbParts.join(", ")}.` : ""}</div>` : "";
-        const monthlyGapsLine = (li.monthlyGaps && li.monthlyGaps.length) ? (()=>{
-          // Group by food group for readability
-          const byGrp = {};
-          li.monthlyGaps.forEach(g => { (byGrp[g.group] = byGrp[g.group] || []).push(`${g.month.charAt(0).toUpperCase()+g.month.slice(1)} (${g.pct}%)`); });
-          const lines = Object.entries(byGrp).map(([k,arr]) => `<strong>${(FG_DISPLAY[k]||{}).label||k}:</strong> ${arr.join(", ")}`).join("<br>");
-          return `<div style="font-size:12px;margin-top:6px;padding-top:6px;border-top:1px dashed currentColor"><strong>Seasonal variety gaps</strong> (months below 50% of daily target):<br>${lines}</div>`;
-        })() : "";
-        return `<div class="alert ${li.status === "optimal" ? "alert-info" : "alert-warn"}" style="margin-top:8px">
-          <strong>LP solver:</strong> ${
-            li.status === "optimal" ?
-              `Found provably optimal plan. <strong>${li.nutrientsCovered.length}</strong> nutrients ≥ 85% of NRV${li.nutrientsCovered.length ? ": " + li.nutrientsCovered.join(", ") : ""}.` :
-            li.status === "infeasible" ?
-              `Problem is infeasible — cannot meet all NRVs with current resources. The LP returns its best feasible attempt.` :
-            li.status === "no_candidates" ?
-              `No suitable crops in current selection. Check your crop choices and climate/soil settings.` :
-              `LP status: ${li.status}`
-          }
-          ${li.nutrientsUnderSupplied && li.nutrientsUnderSupplied.length ?
-            `<br><span style="font-size:11px">Still below 85% of NRV: ${li.nutrientsUnderSupplied.map(u => `<strong>${u.name}</strong> (${u.pct}%)`).join(", ")}</span>` : ""}
-          ${tierLine}
-          ${monthlyGapsLine}
-          <div style="font-size:11px;margin-top:6px;color:var(--text-mid);font-style:italic">Food-group serve caps removed — diversity is driven by month-by-month fresh-supply coverage rather than fixed per-food limits.</div>
-        </div>`;
-      })() : ""}
     </div>
     </div>
     <div class="plan-pane" data-pane="overview">
@@ -5946,28 +5270,39 @@ function renderSpatialStep(){
   }
   const totalZoneHa=sm.zones.reduce((t,z)=>t+z.area_ha,0);
   const totalDamYield=sm.water.dams.reduce((t,d)=>t+(d.yield_kL||0),0);
-  const zoneRows=sm.zones.map(z=>`
-    <tr>
+  const pl = (state.plan && state.plan.placement) ? state.plan.placement : null;
+  const fByName = {}; if(pl) pl.facets.forEach(f => fByName[f.name] = f);
+  const zoneRows=sm.zones.map(z=>{
+    const f = fByName[z.name];
+    const crops = (z.assigned && z.assigned.length)
+      ? z.assigned.map(a=>`${a.name} <span style="color:var(--text-mid)">(${a.ha} ha${a.layer&&a.layer!=='annual'?' · '+a.layer:''})</span>`).join(", ")
+      : `<span style="color:var(--text-mid)">${pl ? "—" : "generate the farm plan first"}</span>`;
+    return `<tr>
       <td>${z.name}</td>
       <td>${z.area_ha.toFixed(2)} ha</td>
-      <td>${z.suitableCategories.join(", ")||"—"}</td>
-      <td>${z.excludedCategories.join(", ")||"—"}</td>
-    </tr>`).join("");
+      <td>${f ? f.usedHa.toFixed(2)+" ha" : "—"}</td>
+      <td style="font-size:11px">${crops}</td>
+    </tr>`;
+  }).join("");
+  const overflow = (pl && pl.unplaced.length)
+    ? `<div class="lidcard" style="border-left:3px solid var(--bad,#cc5b48);margin-bottom:12px"><b>${pl.unplacedHa.toFixed(2)} ha did not fit any suitable facet</b><br><span style="font-size:11px;color:var(--text-mid)">${pl.unplaced.map(u=>`${u.name} (${u.ha} ha — ${u.reason})`).join("; ")}</span></div>`
+    : "";
   const damRows=sm.water.dams.length?sm.water.dams.map((d,k)=>`
     <tr><td>${d.type} ${k+1}</td><td>${d.catchment_ha.toFixed(2)} ha</td><td>${Math.round(d.yield_kL).toLocaleString()} kL/yr</td></tr>`).join("")
     :`<tr><td colspan="3" style="color:var(--text-mid)">No dams identified</td></tr>`;
   return `<div style="padding:24px">
     <h2 style="margin:0 0 4px">Site Analysis — Active</h2>
-    <p style="color:var(--text-mid);margin:0 0 16px">Site model applied. The allocator is using per-zone area budgets and suitability gates.</p>
+    <p style="color:var(--text-mid);margin:0 0 16px">The nutrition plan is computed first; its crops are then <b>placed</b> onto the real per-facet areas below. Facets no longer constrain the plan — placement is downstream of allocation.</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       <div class="lidcard"><b>Total mapped area</b><br>${sm.area_ha.toFixed(2)} ha</div>
-      <div class="lidcard"><b>Zone coverage</b><br>${totalZoneHa.toFixed(2)} ha across ${sm.zones.length} zones</div>
+      <div class="lidcard"><b>Facet coverage</b><br>${totalZoneHa.toFixed(2)} ha across ${sm.zones.length} facets</div>
       <div class="lidcard"><b>Swaleable area</b><br>${sm.water.swaleableArea_ha.toFixed(2)} ha</div>
       <div class="lidcard"><b>Dam yield</b><br>${Math.round(totalDamYield).toLocaleString()} kL/yr total</div>
     </div>
-    <h3 style="margin:0 0 6px;font-size:13px">Zones</h3>
+    ${overflow}
+    <h3 style="margin:0 0 6px;font-size:13px">Facets &amp; placed crops</h3>
     <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:16px">
-      <thead><tr style="background:var(--head-bg,#e8e1cd)"><th style="text-align:left;padding:4px">Zone</th><th>Area</th><th>Suitable for</th><th>Excluded</th></tr></thead>
+      <thead><tr style="background:var(--head-bg,#e8e1cd)"><th style="text-align:left;padding:4px">Facet</th><th>Area</th><th>Used</th><th style="text-align:left">Crops placed</th></tr></thead>
       <tbody>${zoneRows}</tbody>
     </table>
     <h3 style="margin:0 0 6px;font-size:13px">Water infrastructure</h3>
