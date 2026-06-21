@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crops Database Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gdk:#2A5C20;--gmd:#3B7A2E;--glt:#6B9E58;--gxlt:#C8E0B8;
+  --oat:#F5F0E4;--card:#FDFAF4;--bdr:#D4C9A8;--bdr-dk:#B8A87A;
+  --text:#2C2C1E;--mid:#6B6455;--warm:#C4823A;--clay:#8C4A2A;
+  --shadow:0 2px 8px rgba(0,0,0,.08);
+}
+body{font-family:'DM Mono',monospace;font-size:13px;background:var(--oat);color:var(--text);min-height:100vh}
+a{color:var(--gdk)}
+
+/* ── Header ── */
+.site-hdr{background:var(--gdk);color:#fff;padding:18px 24px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+.site-hdr h1{font-family:'Lora',serif;font-size:22px;font-weight:600;letter-spacing:.01em}
+.site-hdr .sub{font-size:11px;opacity:.75;letter-spacing:.06em;text-transform:uppercase}
+
+/* ── Toolbar ── */
+.toolbar{background:var(--card);border-bottom:1px solid var(--bdr);padding:10px 20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;position:sticky;top:0;z-index:10;box-shadow:var(--shadow)}
+.toolbar input[type=text]{font-family:'DM Mono',monospace;font-size:12px;padding:6px 10px;border:1px solid var(--bdr-dk);background:#fff;color:var(--text);border-radius:4px;min-width:200px;outline:none}
+.toolbar input[type=text]:focus{border-color:var(--gdk);box-shadow:0 0 0 2px var(--gxlt)}
+.toolbar select{font-family:'DM Mono',monospace;font-size:12px;padding:6px 10px;border:1px solid var(--bdr-dk);background:#fff;color:var(--text);border-radius:4px;cursor:pointer;outline:none}
+.toolbar select:focus{border-color:var(--gdk)}
+.pill{display:inline-block;padding:3px 10px;border-radius:12px;font-size:10px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+.pill-g{background:#D4EAC8;color:#1A4A10}
+.pill-a{background:#E8F4D8;color:#2A5C20}
+.pill-w{background:#FAE8C8;color:#7A4A10}
+.pill-c{background:#D4E8F5;color:#1A4A7A}
+.count{font-size:11px;color:var(--mid);margin-left:auto;white-space:nowrap}
+
+/* ── Table ── */
+.wrap{padding:16px 20px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:960px}
+thead tr{background:var(--gdk);color:#fff}
+thead th{padding:8px 10px;text-align:left;font-family:'Lora',serif;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;cursor:pointer;user-select:none}
+thead th:hover{background:var(--gmd)}
+thead th.sorted{background:var(--gmd)}
+thead th .arr{margin-left:4px;opacity:.8}
+tbody tr{background:var(--card);border-bottom:1px solid var(--bdr)}
+tbody tr:nth-child(even){background:#F8F4EA}
+tbody tr:hover{background:var(--gxlt);transition:background .12s}
+td{padding:6px 10px;vertical-align:middle}
+td.name{font-family:'Lora',serif;font-size:13px;font-weight:600;white-space:nowrap}
+td.mono{font-family:'DM Mono',monospace;font-size:11px;color:var(--mid)}
+td.num{text-align:right;font-family:'DM Mono',monospace;font-size:11px}
+td.center{text-align:center}
+
+/* ── Month bar ── */
+.mbar{display:flex;gap:2px;align-items:center}
+.md{width:11px;height:11px;border-radius:2px;background:#E8E4D8;flex-shrink:0}
+.md.P{background:var(--gdk)}
+.md.S{background:var(--glt);opacity:.7}
+.md-lbl{font-size:8px;color:var(--mid);text-align:center;margin-top:1px;display:block}
+
+/* ── Food group tags ── */
+.fg{display:inline-block;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.fg-veg{background:#D4EAC8;color:#1A5010}
+.fg-fruit{background:#FAE0C8;color:#7A3010}
+.fg-grain{background:#E8DCBE;color:#5A4010}
+.fg-protein{background:#D8E8F5;color:#1A3A5A}
+.fg-oils{background:#F5EAC8;color:#6A4A10}
+.fg-herb{background:#E0F0D0;color:#2A5A20}
+.fg-disc{background:#EEE;color:#555}
+
+/* ── Soil tags ── */
+.soil{display:inline-block;padding:1px 5px;border-radius:2px;font-size:9px;background:#EDE9D8;color:#5A4A28;margin:1px}
+
+/* ── Nut pills ── */
+.nut{display:inline-block;padding:1px 5px;border-radius:2px;font-size:9px;background:#D8EAF0;color:#1A4A5A;margin:1px}
+
+/* ── Detail expand row ── */
+.detail{background:#F2EEE0!important;border-top:1px solid var(--bdr)}
+.detail td{padding:12px 16px;font-size:11px}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.detail-section h3{font-family:'Lora',serif;font-size:11px;font-weight:600;color:var(--gdk);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;border-bottom:1px solid var(--bdr);padding-bottom:3px}
+.detail-section p{line-height:1.7;color:var(--mid)}
+.detail-section strong{color:var(--text)}
+
+/* ── Loading / empty ── */
+.loading{text-align:center;padding:60px;color:var(--mid);font-family:'Lora',serif;font-style:italic;font-size:16px}
+.empty{text-align:center;padding:40px;color:var(--mid);font-size:13px}
+</style>
+</head>
+<body>
+
+<div class="site-hdr">
+  <h1>Crops Database</h1>
+  <span class="sub">Family Farm Planner &mdash; species reference</span>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="q" placeholder="Search name, edible part, zone…" oninput="filter()">
+  <select id="fg" onchange="filter()">
+    <option value="">All food groups</option>
+    <option value="Vegetables & Legumes">Vegetables & Legumes</option>
+    <option value="Fruit">Fruit</option>
+    <option value="Grain (Cereal) Foods">Grain (Cereal) Foods</option>
+    <option value="Lean Meats, Eggs, Nuts, Seeds & Legumes">Protein (Nuts, Seeds, Legumes)</option>
+    <option value="Oils & Fats">Oils & Fats</option>
+    <option value="Herbs">Herbs</option>
+    <option value="Discretionary">Discretionary</option>
+  </select>
+  <select id="type" onchange="filter()">
+    <option value="">Annual & Perennial</option>
+    <option value="annual">Annual only</option>
+    <option value="perennial">Perennial only</option>
+  </select>
+  <select id="stor" onchange="filter()">
+    <option value="">All storability</option>
+    <option value="Long Storage">Long Storage</option>
+    <option value="Medium Storage">Medium Storage</option>
+    <option value="Year-round Proc.">Year-round Proc.</option>
+    <option value="Short Storage">Short Storage</option>
+    <option value="Fresh Only">Fresh Only</option>
+  </select>
+  <span class="count" id="cnt"></span>
+</div>
+
+<div class="wrap">
+  <div class="loading" id="loading">Loading crops database…</div>
+  <table id="tbl" style="display:none">
+    <thead>
+      <tr>
+        <th onclick="sort('name')">Name <span class="arr" id="arr-name"></span></th>
+        <th onclick="sort('food_group')">Food group <span class="arr" id="arr-food_group"></span></th>
+        <th onclick="sort('edible_part')">Edible part <span class="arr" id="arr-edible_part"></span></th>
+        <th onclick="sort('yield_high')" style="text-align:right">Yield t/ha <span class="arr" id="arr-yield_high"></span></th>
+        <th onclick="sort('labour_hand')" style="text-align:right">Labour h/ha <span class="arr" id="arr-labour_hand"></span></th>
+        <th>Zones</th>
+        <th>Soils</th>
+        <th>Months (J–D)</th>
+        <th onclick="sort('storability')">Storage <span class="arr" id="arr-storability"></span></th>
+      </tr>
+    </thead>
+    <tbody id="body"></tbody>
+  </table>
+  <div class="empty" id="empty" style="display:none">No crops match this filter.</div>
+</div>
+
+<script>
+const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const MONTH_LBL = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+
+let allCrops = [], visible = [], sortCol = 'name', sortDir = 1, expanded = null;
+
+const FG_CLS = {
+  'Vegetables & Legumes':'fg-veg','Fruit':'fg-fruit','Grain (Cereal) Foods':'fg-grain',
+  'Lean Meats, Eggs, Nuts, Seeds & Legumes':'fg-protein','Oils & Fats':'fg-oils',
+  'Herbs':'fg-herb','Discretionary':'fg-disc'
+};
+const FG_SHORT = {
+  'Vegetables & Legumes':'Veg & Legumes','Fruit':'Fruit','Grain (Cereal) Foods':'Grain',
+  'Lean Meats, Eggs, Nuts, Seeds & Legumes':'Protein','Oils & Fats':'Oils & Fats',
+  'Herbs':'Herbs','Discretionary':'Discretionary'
+};
+const STOR_ORDER = {'Long Storage':5,'Medium Storage':4,'Year-round Proc.':3,'Short Storage':2,'Fresh Only':1,'':0};
+
+function fgTag(fg){
+  return `<span class="fg ${FG_CLS[fg]||'fg-disc'}">${FG_SHORT[fg]||fg}</span>`;
+}
+
+function monthBar(months){
+  return '<div class="mbar">' +
+    MONTHS.map((m,i) => {
+      const v = months[m] || '';
+      return `<div class="md ${v}" title="${MONTH_LBL[i]}: ${v||'—'}"></div>`;
+    }).join('') + '</div>';
+}
+
+function soilBadges(arr){
+  return (arr||[]).map(s=>`<span class="soil">${s}</span>`).join('');
+}
+
+function nutPills(nut){
+  if(!nut) return '—';
+  const show = [['kcal','kcal'],['protein','prot'],['ca','Ca'],['fe','Fe'],['vitC','vitC'],['vitA','vitA'],['vitD','vitD'],['b12','B12'],['fiber','fib']];
+  return show.filter(([k])=>nut[k]!=null&&nut[k]>0)
+    .map(([k,l])=>`<span class="nut">${l} ${nut[k]}</span>`).join('') || '—';
+}
+
+function renderRow(c, idx){
+  const perTag = c.perennial
+    ? '<span class="pill pill-g" style="margin-left:4px">P</span>'
+    : '<span class="pill pill-a" style="margin-left:4px;background:#eee;color:#555">A</span>';
+  const yld = (c.yield_low||0)===(c.yield_high||0)
+    ? (c.yield_high||'—')
+    : `${c.yield_low||'?'}–${c.yield_high||'?'}`;
+  const zones = (c.cliz||[]).join(' ') || '—';
+
+  return `<tr class="data-row" onclick="toggle(${idx})" style="cursor:pointer">
+    <td class="name">${c.name}${perTag}</td>
+    <td>${fgTag(c.food_group)}</td>
+    <td class="mono">${c.edible_part||'—'}</td>
+    <td class="num">${yld}</td>
+    <td class="num">${c.labour_hand||'—'}</td>
+    <td class="mono" style="font-size:10px">${zones}</td>
+    <td>${soilBadges(c.text_tol)}</td>
+    <td>${monthBar(c.months||{})}</td>
+    <td class="mono" style="font-size:10px">${c.storability||'—'}</td>
+  </tr>`;
+}
+
+function renderDetail(c){
+  const nutRow = nutPills(c.nut);
+  const optSoils = (c.text_opt||[]).join(', ')||'—';
+  const tolSoils = (c.text_tol||[]).join(', ')||'—';
+  const zones = (c.cliz||[]).join(', ')||'—';
+  const tempStr = (c.temp_opt_min!=null||c.temp_opt_max!=null)
+    ? `${c.temp_opt_min??'?'}–${c.temp_opt_max??'?'}°C` : '—';
+  const rainStr = (c.rain_min!=null||c.rain_max!=null)
+    ? `${c.rain_min??'?'}–${c.rain_max??'?'} mm` : '—';
+  const phStr = (c.ph_min!=null||c.ph_max!=null)
+    ? `${c.ph_min??'?'}–${c.ph_max??'?'}` : '—';
+  const serveSz = c.serve_g ? `${c.serve_g} g` : '—';
+  const labMech = c.labour_mech ? `${c.labour_mech} h/ha (mech)` : '—';
+
+  return `<tr class="detail"><td colspan="9">
+    <div class="detail-grid">
+      <div class="detail-section">
+        <h3>Agronomy</h3>
+        <p>
+          <strong>Yield:</strong> ${c.yield_low||'?'}–${c.yield_high||'?'} t/ha<br>
+          <strong>Labour (hand):</strong> ${c.labour_hand||'—'} h/ha<br>
+          <strong>Labour (mech):</strong> ${labMech}<br>
+          <strong>Serve size:</strong> ${serveSz}<br>
+          <strong>Storability:</strong> ${c.storability||'—'}<br>
+          ${c.cool_store?`<strong>Cool-stored:</strong> ${c.cool_store}<br>`:''}
+          ${c.establishment_years?`<strong>Establishes:</strong> ${c.establishment_years} yr<br>`:''}
+        </p>
+      </div>
+      <div class="detail-section">
+        <h3>Climate</h3>
+        <p>
+          <strong>Zones:</strong> ${zones}<br>
+          <strong>Temp range:</strong> ${tempStr}<br>
+          <strong>Abs. temp:</strong> ${c.tmin??'?'}–${c.tmax??'?'}°C<br>
+          <strong>Rainfall:</strong> ${rainStr}<br>
+          <strong>Opt. rain:</strong> ${c.ropmn!=null?`${c.ropmn}–${c.ropmx} mm`:'—'}
+        </p>
+      </div>
+      <div class="detail-section">
+        <h3>Soil</h3>
+        <p>
+          <strong>Optimal:</strong> ${optSoils}<br>
+          <strong>Tolerated:</strong> ${tolSoils}<br>
+          <strong>pH:</strong> ${phStr}<br>
+          ${c.gmin!=null?`<strong>Growing degree days:</strong> ${c.gmin}–${c.gmax||'?'}<br>`:''}
+          ${c.ktmp!=null?`<strong>Kill temp:</strong> ${c.ktmp}°C<br>`:''}
+        </p>
+      </div>
+      <div class="detail-section">
+        <h3>Nutrition (per 100 g)</h3>
+        <p>${nutRow}</p>
+        ${c.notes?`<h3 style="margin-top:10px">Notes</h3><p>${c.notes}</p>`:''}
+      </div>
+    </div>
+  </td></tr>`;
+}
+
+function render(){
+  const body = document.getElementById('body');
+  let html = '';
+  visible.forEach((c,i) => {
+    html += renderRow(c, i);
+    if(expanded === i) html += renderDetail(c);
+  });
+  body.innerHTML = html || '';
+  document.getElementById('cnt').textContent = `${visible.length} / ${allCrops.length} crops`;
+  document.getElementById('empty').style.display = visible.length ? 'none' : 'block';
+}
+
+function toggle(idx){
+  expanded = expanded === idx ? null : idx;
+  render();
+  // Scroll expanded row into view
+  if(expanded !== null){
+    const rows = document.querySelectorAll('.data-row');
+    if(rows[expanded]) rows[expanded].scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+}
+
+function filter(){
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const fg = document.getElementById('fg').value;
+  const type = document.getElementById('type').value;
+  const stor = document.getElementById('stor').value;
+  expanded = null;
+
+  visible = allCrops.filter(c => {
+    if(fg && c.food_group !== fg) return false;
+    if(type === 'annual' && c.perennial) return false;
+    if(type === 'perennial' && !c.perennial) return false;
+    if(stor && c.storability !== stor) return false;
+    if(q){
+      const hit = c.name.toLowerCase().includes(q)
+        || (c.food_group||'').toLowerCase().includes(q)
+        || (c.edible_part||'').toLowerCase().includes(q)
+        || (c.cliz||[]).some(z=>z.toLowerCase().includes(q))
+        || (c.text_tol||[]).some(s=>s.toLowerCase().includes(q))
+        || (c.storability||'').toLowerCase().includes(q);
+      if(!hit) return false;
+    }
+    return true;
+  });
+
+  sortVisible();
+  render();
+}
+
+function sort(col){
+  if(sortCol === col) sortDir *= -1;
+  else { sortCol = col; sortDir = 1; }
+  document.querySelectorAll('.arr').forEach(el => el.textContent = '');
+  const arr = document.getElementById('arr-'+col);
+  if(arr) arr.textContent = sortDir === 1 ? ' ▴' : ' ▾';
+  sortVisible();
+  render();
+}
+
+function sortVisible(){
+  visible.sort((a,b) => {
+    let av, bv;
+    if(sortCol === 'yield_high'){ av = a.yield_high||0; bv = b.yield_high||0; return sortDir*(av-bv); }
+    if(sortCol === 'labour_hand'){ av = a.labour_hand||0; bv = b.labour_hand||0; return sortDir*(av-bv); }
+    if(sortCol === 'storability'){ av = STOR_ORDER[a.storability||'']||0; bv = STOR_ORDER[b.storability||'']||0; return sortDir*(av-bv); }
+    av = (a[sortCol]||'').toString().toLowerCase();
+    bv = (b[sortCol]||'').toString().toLowerCase();
+    return sortDir * av.localeCompare(bv);
+  });
+}
+
+// Load
+fetch('crops.json')
+  .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+  .then(data => {
+    allCrops = data.sort((a,b) => a.name.localeCompare(b.name));
+    visible = [...allCrops];
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('tbl').style.display = 'table';
+    // Set default sort arrow
+    const arr = document.getElementById('arr-name');
+    if(arr) arr.textContent = ' ▴';
+    render();
+  })
+  .catch(err => {
+    document.getElementById('loading').innerHTML =
+      `<span style="color:#8C4A2A">Failed to load crops.json: ${err.message}</span><br>
+       <span style="font-size:12px;color:var(--mid)">Make sure crops.json is in the same directory.</span>`;
+  });
+</script>
+</body>
+</html>

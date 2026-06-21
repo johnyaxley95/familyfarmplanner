@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Family Farm Planner — Australian Homestead Edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" />
+<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2/dist/leaflet-geoman.css" />
+
+<!-- Spatial panel dark-theme styles, scoped to #sp-panel -->
+<style>
+#sp-panel{
+  --bg:#10110d;--panel:#1b1d16;--panel2:#15170f;--line:#34382b;
+  --ink:#e9ead9;--muted:#9aa087;--faint:#6f7558;
+  --accent:#9cbb57;--accent-d:#7a9a3c;--ok:#6fae4f;--warn:#d6a23e;--bad:#cc5b48;--info:#6fa8c7;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  display:none; position:fixed; inset:0; z-index:999;
+  background:var(--bg); color:var(--ink);
+  font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+}
+#sp-panel.sp-visible{ display:block; }
+#sp-panel .sp-header{
+  padding:12px 18px 10px; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; justify-content:space-between;
+}
+#sp-panel .sp-header h2{ margin:0; font-size:16px; }
+#sp-panel .sp-close{
+  background:transparent; border:1px solid var(--line); color:var(--ink);
+  padding:5px 12px; border-radius:6px; cursor:pointer; font-size:13px;
+}
+#sp-panel .sp-wrap{
+  display:grid; grid-template-columns:390px 1fr; height:calc(100vh - 52px);
+}
+@media(max-width:880px){
+  #sp-panel .sp-wrap{ grid-template-columns:1fr; height:auto; }
+  #sp-panel #sp-map{ height:60vh; }
+}
+#sp-panel .sp-side{ border-right:1px solid var(--line); overflow:auto; padding:16px 18px 60px; }
+#sp-panel #sp-map{ height:100%; background:#222; }
+#sp-panel .sp-block{ margin-bottom:18px; }
+#sp-panel .sp-lbl{ font-size:11px; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:7px; }
+#sp-panel .sp-search{ display:flex; gap:7px; }
+#sp-panel .sp-search input{ flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--ink); padding:9px 10px; border-radius:7px; font-size:14px; }
+#sp-panel input:focus, #sp-panel select:focus{ outline:2px solid var(--accent-d); outline-offset:1px; }
+#sp-panel button{ background:var(--accent); color:#15170f; border:0; font-weight:650; padding:9px 14px; border-radius:7px; cursor:pointer; font-size:14px; white-space:nowrap; }
+#sp-panel button:disabled{ opacity:.45; cursor:default; }
+#sp-panel button.ghost{ background:transparent; color:var(--ink); border:1px solid var(--line); font-weight:500; }
+#sp-panel button.big{ width:100%; padding:11px; font-size:15px; margin-top:2px; }
+#sp-panel .searchnote{ font-size:11.5px; color:var(--faint); margin-top:6px; min-height:1em; }
+#sp-panel .sp-field{ margin-top:10px; }
+#sp-panel .sp-field label{ font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); display:block; margin-bottom:5px; }
+#sp-panel .sp-field select, #sp-panel .sp-field input{ width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--ink); padding:8px 9px; border-radius:7px; font-size:14px; }
+#sp-panel .row2{ display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+#sp-panel .stat{ background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:9px 11px; }
+#sp-panel .stat .k{ font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+#sp-panel .stat .v{ font-family:var(--mono); font-size:17px; font-weight:700; margin-top:2px; }
+#sp-panel .stat .v small{ font-size:11px; color:var(--muted); font-weight:400; }
+#sp-panel .verdict{ border:1px solid var(--line); border-left:3px solid var(--faint); border-radius:7px; padding:9px 11px; margin-top:9px; font-size:12.5px; color:var(--muted); }
+#sp-panel .verdict.ok{ border-left-color:var(--ok); }
+#sp-panel .verdict.warn{ border-left-color:var(--warn); }
+#sp-panel .verdict.bad{ border-left-color:var(--bad); }
+#sp-panel .verdict.info{ border-left-color:var(--info); }
+#sp-panel .verdict b{ color:var(--ink); }
+#sp-panel .slider{ display:flex; align-items:center; gap:9px; margin-top:9px; }
+#sp-panel .slider input[type=range]{ flex:1; }
+#sp-panel .muted{ font-size:11.5px; color:var(--faint); margin-top:5px; }
+#sp-panel .legend-bar{ height:10px; border-radius:5px; margin:8px 0 4px; background:linear-gradient(90deg,#304e28,#96904f,#e1ded0); }
+#sp-panel .legend-ends{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+#sp-panel .layerbtns{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+#sp-panel .lyr{ background:var(--panel); border:1px solid var(--line); color:var(--muted); font-weight:500; padding:6px 10px; font-size:12.5px; border-radius:7px; }
+#sp-panel .lyr.on{ background:var(--accent); color:#15170f; border-color:var(--accent); font-weight:650; }
+#sp-panel .import-zone{ border:1px dashed var(--line); border-radius:9px; padding:13px; text-align:center; background:var(--panel); }
+#sp-panel .import-zone input[type=file]{ display:none; }
+#sp-panel .import-zone .pick{ display:inline-block; background:var(--accent); color:#15170f; font-weight:650; padding:9px 14px; border-radius:7px; cursor:pointer; font-size:14px; }
+#sp-panel .lidcard{ background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:11px 12px; margin-top:10px; font-size:12.5px; }
+#sp-panel .lidcard .kv{ display:flex; justify-content:space-between; gap:10px; padding:2px 0; }
+#sp-panel .lidcard .kv span:first-child{ color:var(--muted); }
+#sp-panel .lidcard .kv span:last-child{ font-family:var(--mono); text-align:right; }
+#sp-panel .pill{ font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px; }
+#sp-panel .pill.ok{ background:rgba(111,174,79,.15); color:var(--ok); }
+#sp-panel .pill.warn{ background:rgba(214,162,62,.15); color:var(--warn); }
+#sp-panel .pill.bad{ background:rgba(204,91,72,.15); color:var(--bad); }
+.leaflet-pm-toolbar{ margin-top:80px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SPATIAL PANEL — lives outside #app so Leaflet map survives re-renders.
+     Shown/hidden by renderApp() when state.step === 7.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div id="sp-panel">
+  <div class="sp-header">
+    <h2>Site Analysis — Terrain, Facets &amp; Water Design</h2>
+    <button class="sp-close" onclick="goStep(0)">✕ Back to Planner</button>
+  </div>
+  <div class="sp-wrap">
+    <div class="sp-side">
+
+      <div class="sp-block">
+        <div class="sp-lbl">Find the site</div>
+        <div class="sp-search">
+          <input id="sp-q" placeholder="Address or locality, e.g. Darlington WA" />
+          <button id="sp-search">Search</button>
+        </div>
+        <div class="searchnote" id="sp-searchnote">Trace your block with the map toolbar (top-left), then sample or import.</div>
+        <button class="ghost" id="sp-parcelMode" style="margin-top:8px;width:100%;">Click-to-load legal parcel (WA)</button>
+        <div class="searchnote" id="sp-parcelnote"></div>
+      </div>
+
+      <div class="sp-block">
+        <div class="sp-lbl">Import LiDAR tile (ELVIS GeoTIFF)</div>
+        <div class="import-zone">
+          <label class="pick">Choose .tif file<input id="sp-file" type="file" accept=".tif,.tiff,image/tiff" /></label>
+          <div class="muted" style="margin-top:8px;">Reads locally — nothing is uploaded. Perth tiles are MGA Zone 50; auto-detected.</div>
+        </div>
+        <div class="sp-field" id="sp-crsOverrideWrap" style="display:none;">
+          <label>CRS not detected — choose the tile's projection</label>
+          <select id="sp-crsOverride">
+            <option value="">select…</option>
+            <option value="28350">GDA94 / MGA Zone 50 (Perth)</option>
+            <option value="7850">GDA2020 / MGA Zone 50 (Perth)</option>
+            <option value="28349">GDA94 / MGA Zone 49</option>
+            <option value="7849">GDA2020 / MGA Zone 49</option>
+            <option value="28351">GDA94 / MGA Zone 51</option>
+            <option value="7851">GDA2020 / MGA Zone 51</option>
+            <option value="4283">GDA94 geographic (lat/lon)</option>
+            <option value="4326">WGS84 geographic (lat/lon)</option>
+          </select>
+        </div>
+        <div id="sp-lidcard" class="lidcard"></div>
+      </div>
+
+      <div class="sp-block">
+        <div class="sp-lbl">Sample</div>
+        <div class="sp-field" style="margin-top:0;">
+          <select id="sp-source">
+            <option value="terrain3d">Esri Terrain3D — ~30 m (live baseline)</option>
+            <option value="openmeteo">Open-Meteo Copernicus — ~90 m (cross-check)</option>
+            <option value="lidar" disabled>Imported LiDAR tile — native res</option>
+          </select>
+        </div>
+        <div class="sp-field">
+          <label>Buffer beyond boundary (m)</label>
+          <input id="sp-buffer" type="number" min="0" step="10" value="60" />
+        </div>
+        <button class="big" id="sp-sample">Sample terrain</button>
+        <div class="muted" id="sp-samplenote"></div>
+      </div>
+
+      <div class="sp-block" id="sp-results" style="display:none;">
+        <div class="sp-lbl">Results</div>
+        <div class="row2">
+          <div class="stat"><div class="k">Elev min</div><div class="v" id="sp-emin">—<small> m</small></div></div>
+          <div class="stat"><div class="k">Elev max</div><div class="v" id="sp-emax">—<small> m</small></div></div>
+          <div class="stat"><div class="k">Relief</div><div class="v" id="sp-erange">—<small> m</small></div></div>
+          <div class="stat"><div class="k">Grid</div><div class="v" id="sp-grid" style="font-size:14px;">—</div></div>
+          <div class="stat"><div class="k">Spacing</div><div class="v" id="sp-spacing">—<small> m</small></div></div>
+          <div class="stat"><div class="k">Samples</div><div class="v" id="sp-nsamp">—</div></div>
+        </div>
+        <div id="sp-verdicts"></div>
+        <div class="legend-bar"></div>
+        <div class="legend-ends"><span id="sp-lgmin">—</span><span>elevation</span><span id="sp-lgmax">—</span></div>
+        <div class="slider">
+          <span style="font-size:12px;color:var(--muted);">Overlay</span>
+          <input id="sp-opacity" type="range" min="0" max="100" value="80" />
+          <button class="ghost" id="sp-toggle" style="padding:6px 10px;">Hide</button>
+        </div>
+      </div>
+
+      <div class="sp-block" id="sp-analyseWrap" style="display:none;">
+        <button class="big" id="sp-analyse">Analyse terrain — slope · aspect · flow</button>
+        <div class="muted" id="sp-analysenote"></div>
+      </div>
+
+      <div class="sp-block" id="sp-analysis" style="display:none;">
+        <div class="sp-lbl">Layers</div>
+        <div class="layerbtns" id="sp-layerbtns">
+          <button data-layer="relief" class="lyr on">Relief</button>
+          <button data-layer="slope" class="lyr">Slope</button>
+          <button data-layer="aspect" class="lyr">Sun aspect</button>
+          <button data-layer="flow" class="lyr">Water flow</button>
+          <button data-layer="ponding" class="lyr">Ponding</button>
+          <button data-layer="wetness" class="lyr">Wetness</button>
+          <button data-layer="facets" class="lyr s4" style="display:none">Facets</button>
+          <button data-layer="waterplan" class="lyr s4" style="display:none">Water plan</button>
+        </div>
+        <div id="sp-legend"></div>
+        <div id="sp-astats"></div>
+      </div>
+
+      <div class="sp-block" id="sp-designWrap" style="display:none;">
+        <div class="sp-lbl">Stage 4 — design</div>
+        <div class="row2">
+          <div class="sp-field" style="margin-top:0;"><label>Annual rain (mm)</label><input id="sp-rain" type="number" min="0" step="10" value="1100" /></div>
+          <div class="sp-field" style="margin-top:0;"><label>Runoff coeff</label><input id="sp-coeff" type="number" min="0.05" max="0.9" step="0.05" value="0.25" /></div>
+        </div>
+        <div class="sp-field">
+          <label>Soil (sets swale erodibility factor)</label>
+          <select id="sp-soil">
+            <option value="sand">Sand</option>
+            <option value="loamy_sand">Loamy sand</option>
+            <option value="sandy_loam">Sandy loam</option>
+            <option value="loam" selected>Loam</option>
+            <option value="clay_loam">Clay loam</option>
+            <option value="light_clay">Light clay</option>
+            <option value="heavy_clay">Medium–heavy clay</option>
+            <option value="gravel">Gravelly / lateritic (Hills)</option>
+          </select>
+        </div>
+        <div class="sp-field"><label>Max swale spacing cap (m)</label><input id="sp-himax" type="number" min="8" max="60" step="1" value="25" /></div>
+        <button class="big" id="sp-design">Generate facets, swales &amp; dams</button>
+        <div class="muted" id="sp-designnote"></div>
+        <button class="big" onclick="applySiteModelToPlanner()" style="margin-top:10px;background:#5c9a3a;">Apply Site Model to Planner ↗</button>
+      </div>
+
+    </div><!-- .sp-side -->
+    <div id="sp-map"></div>
+  </div><!-- .sp-wrap -->
+</div><!-- #sp-panel -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     MAIN PLANNER APP
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="app">Loading…</div>
+
+<!-- CDN libraries (spatial dependencies) -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/esri-leaflet@3/dist/esri-leaflet.js"></script>
+<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2/dist/leaflet-geoman.min.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+<script src="https://unpkg.com/proj4@2/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2/dist-browser/geotiff.js"></script>
+
+<!-- Application modules — spatial first (no deps on planner), then planner -->
+<script src="spatial.js"></script>
+<script src="planner.js"></script>
+</body>
+</html>
