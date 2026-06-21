@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Farm Succession Planner</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;background:#F5F0E4;color:#2C2C1E;min-height:100vh}
+:root{--gdk:#2A5C20;--gmd:#3B7A2E;--glt:#6B9E58;--card:#FDFAF4;--bdr:#D4C9A8;--tmid:#6B6455;--clay:#8C4A2A;--warn:#C4823A;--shadow:0 1px 4px rgba(0,0,0,.08)}
+.app{max-width:1200px;margin:0 auto;padding:16px}
+h1{font-size:22px;font-weight:700;color:var(--gdk)}
+h2{font-size:15px;font-weight:600;color:var(--gdk);margin-bottom:10px}
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:10px;padding:16px;box-shadow:var(--shadow)}
+.btn{cursor:pointer;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:600;border:1px solid var(--bdr);background:var(--card);color:#2C2C1E;font-family:inherit}.btn:hover{background:#EDE9D8}
+.btn-g{background:var(--gdk);color:#fff;border-color:var(--gdk)}.btn-g:hover{background:var(--gmd)}
+.tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
+.tg{background:#D4EAC8;color:#2A5C20}.ta{background:#FAE8C8;color:#7A4A10}.tr{background:#F5D4C8;color:#7A2A1A}.tb{background:#D4E8F5;color:#1A4A7A}
+#ls{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;gap:20px;text-align:center}
+#ls textarea{width:620px;max-width:90vw;height:140px;padding:10px;font-family:monospace;font-size:12px;border:1px solid var(--bdr);border-radius:8px;background:#fff;resize:vertical}
+.hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.hdr-info{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.chip{font-size:12px;color:var(--tmid)}.chip strong{color:#2C2C1E}</style>
+</head>
+<body>
+<div class="app" id="app">
+<div id="ls">
+  <div>
+    <h1>&#x1F331; Farm Succession Planner</h1>
+    <p style="color:var(--tmid);margin-top:6px;font-size:13px">Companion to the Family Farm Planner &mdash; shows how your farm nutrition grows as perennials mature</p>
+  </div>
+  <div class="card" style="max-width:660px;width:100%;text-align:left">
+    <h2 style="margin-bottom:8px">Load your farm plan</h2>
+    <p style="font-size:12px;color:var(--tmid);margin-bottom:12px">In the Family Farm Planner (v25+) &rarr; Summary &rarr; click <strong>&#x1F331; Export for Succession Planner</strong>. Paste the code below.</p>
+    <textarea id="ic" placeholder="Paste succession export code here&hellip;"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <button class="btn btn-g" onclick="loadPlan()">Load plan &rarr;</button>
+      <button class="btn" onclick="loadDemo()">Load demo plan</button>
+      <span id="lerr" style="font-size:12px;color:var(--clay)"></span>
+    </div>
+  </div>
+  <p style="font-size:11px;color:var(--tmid)">25-year horizon &middot; Identical algorithm to Family Farm Planner &middot; Perennial yield + canopy model</p>
+</div>
+<div id="mn" style="display:none"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+<script>
+const ADG = {
+  toddler_1_3:   {label:"Toddler 1–3 yrs",    icon:"👶",veg:2.5,fruit:1,  starchy:4,  protein:1,  dairy:1.5,oils:1.5},
+  child_4_8:     {label:"Child 4–8 yrs",       icon:"🧒",veg:4.5,fruit:1.5,starchy:4,  protein:1.5,dairy:2,oils:2.0},
+  child_9_11:    {label:"Child 9–11 yrs",      icon:"🧒",veg:5,  fruit:2,  starchy:5,  protein:2.5,dairy:2.5,oils:2.0},
+  girl_12_13:    {label:"Girl 12–13 yrs",      icon:"👧",veg:5,  fruit:2,  starchy:6,  protein:2.5,dairy:3.5,oils:2.5},
+  boy_12_13:     {label:"Boy 12–13 yrs",       icon:"👦",veg:5.5,fruit:2,  starchy:6,  protein:2.5,dairy:3.5,oils:2.5},
+  girl_14_18:    {label:"Girl 14–18 yrs",      icon:"👩",veg:5,  fruit:2,  starchy:7,  protein:2.5,dairy:3.5,oils:2.5},
+  boy_14_18:     {label:"Boy 14–18 yrs",       icon:"👨",veg:5.5,fruit:2,  starchy:7,  protein:2.5,dairy:3.5,oils:3.0},
+  woman_19_50:   {label:"Woman 19–50 yrs",     icon:"👩",veg:5,  fruit:2,  starchy:6,  protein:2.5,dairy:2.5,oils:2.5},
+  man_19_50:     {label:"Man 19–50 yrs",       icon:"👨",veg:6,  fruit:2,  starchy:6,  protein:3,  dairy:2.5,oils:3.0},
+  woman_51_70:   {label:"Woman 51–70 yrs",     icon:"👩",veg:5,  fruit:2,  starchy:4,  protein:2,  dairy:4,oils:2.5},
+  man_51_70:     {label:"Man 51–70 yrs",       icon:"👨",veg:5.5,fruit:2,  starchy:6,  protein:2.5,dairy:3.5,oils:3.0},
+  woman_70plus:  {label:"Woman 70+ yrs",       icon:"👵",veg:5,  fruit:2,  starchy:3,  protein:2,  dairy:4,oils:2.5},
+  man_70plus:    {label:"Man 70+ yrs",         icon:"👴",veg:5,  fruit:2,  starchy:4.5,protein:2.5,dairy:3.5,oils:3.0},
+  pregnant:      {label:"Pregnant",            icon:"🤰",veg:5,  fruit:2,  starchy:8.5,protein:3.5,dairy:2.5,oils:3.0},
+  breastfeeding: {label:"Breastfeeding",       icon:"🤱",veg:7.5,fruit:2,  starchy:9,  protein:2.5,dairy:2.5,oils:3.0},
+};
+
+const MONTHS=["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+const MONTH_INITIALS=["J","F","M","A","M","J","J","A","S","O","N","D"];
+const FERTILITY_MULT={low:0.55,medium:0.75,high:0.95};
+const STORABILITY_RANK={"Long Storage":5,"Medium Storage":4,"Year-round Proc.":3,"Short Storage":2,"Fresh Only":1};
+
+const FG_GROUPS=["Vegetables & Legumes","Fruit","Starches","Lean Meats, Eggs, Nuts, Seeds & Legumes","Oils & Fats"];
+const FG_KEY={"Vegetables & Legumes":"veg","Fruit":"fruit","Starches":"starchy","Lean Meats, Eggs, Nuts, Seeds & Legumes":"protein","Oils & Fats":"oils"};
+
+const NRV = {
+  toddler_1_3:    {kcal:1100,protein:14,fiber:14,ca:500,fe:9, mg:80, k:2000,zn:3, vitA:300,vitC:35, vitE:5, b1:0.5,b2:0.5,b3:6, b6:0.5,b12:0.9,folate:150},
+  child_4_8:      {kcal:1500,protein:20,fiber:18,ca:700,fe:10,mg:130,k:2300,zn:4, vitA:400,vitC:35, vitE:6, b1:0.6,b2:0.6,b3:8, b6:0.6,b12:1.2,folate:200},
+  child_9_11:     {kcal:1800,protein:34,fiber:24,ca:1000,fe:8,mg:200,k:3000,zn:6, vitA:600,vitC:40, vitE:9, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
+  girl_12_13:     {kcal:1900,protein:42,fiber:28,ca:1300,fe:8,mg:240,k:3400,zn:7, vitA:600,vitC:40, vitE:8, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
+  boy_12_13:      {kcal:2200,protein:42,fiber:31,ca:1300,fe:8,mg:240,k:3400,zn:7, vitA:600,vitC:40, vitE:8, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
+  girl_14_18:     {kcal:2100,protein:46,fiber:25,ca:1300,fe:15,mg:360,k:3800,zn:7,vitA:700,vitC:40, vitE:8, b1:1.1,b2:1.1,b3:14,b6:1.2,b12:2.4,folate:400},
+  boy_14_18:      {kcal:2600,protein:64,fiber:38,ca:1300,fe:11,mg:410,k:3800,zn:13,vitA:900,vitC:40,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.3,b12:2.4,folate:400},
+  woman_19_50:    {kcal:2000,protein:46,fiber:25,ca:1000,fe:18,mg:310,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.3,b12:2.4,folate:400},
+  man_19_50:      {kcal:2500,protein:64,fiber:30,ca:1000,fe:8, mg:400,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.3,b12:2.4,folate:400},
+  woman_51_70:    {kcal:1800,protein:46,fiber:25,ca:1300,fe:8, mg:320,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.5,b12:2.4,folate:400},
+  man_51_70:      {kcal:2300,protein:64,fiber:30,ca:1000,fe:8, mg:420,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.7,b12:2.4,folate:400},
+  woman_70_plus:  {kcal:1600,protein:57,fiber:25,ca:1300,fe:8, mg:320,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.5,b12:2.4,folate:400},
+  man_70_plus:    {kcal:1900,protein:81,fiber:30,ca:1300,fe:8, mg:420,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.7,b12:2.4,folate:400},
+  pregnant:       {kcal:2300,protein:60,fiber:28,ca:1000,fe:27,mg:360,k:2800,zn:11,vitA:800,vitC:55,vitE:7, b1:1.4,b2:1.4,b3:18,b6:1.9,b12:2.6,folate:600},
+  breastfeeding:  {kcal:2500,protein:67,fiber:30,ca:1000,fe:9, mg:330,k:3200,zn:12,vitA:1100,vitC:80,vitE:11,b1:1.4,b2:1.6,b3:17,b6:2.0,b12:2.8,folate:500},
+};
+
+const NUTRIENT_LABELS = {
+  kcal:"Energy",protein:"Protein",fat:"Fat",carbs:"Carbs",fiber:"Fibre",
+  ca:"Calcium",fe:"Iron",mg:"Magnesium",p:"Phosphorus",k:"Potassium",
+  zn:"Zinc",cu:"Copper",mn:"Manganese",se:"Selenium",
+  vitA:"Vit A",vitC:"Vit C",vitE:"Vit E",
+  b1:"Vit B1",b2:"Vit B2",b3:"Vit B3 (Niacin)",b6:"Vit B6",b12:"Vit B12",folate:"Folate"
+};
+
+const NUTRIENT_UNITS = {
+  kcal:"kcal",protein:"g",fat:"g",carbs:"g",fiber:"g",
+  ca:"mg",fe:"mg",mg:"mg",p:"mg",k:"mg",
+  zn:"mg",cu:"mg",mn:"mg",se:"µg",
+  vitA:"µg",vitC:"mg",vitE:"mg",
+  b1:"mg",b2:"mg",b3:"mg",b6:"mg",b12:"µg",folate:"µg"
+};
+
+function householdNRV(household){
+  const totals = {};
+  household.forEach(m => {
+    const nrv = NRV[m.type] || NRV.man_19_50;
+    Object.entries(nrv).forEach(([k,v]) => totals[k] = (totals[k]||0) + v);
+  });
+  return totals;
+}
+
+function subsistYield(crop,fertility,confidence){
+  if(!crop.yield_low||!crop.yield_high)return 0;
+  const mult=FERTILITY_MULT[fertility]||0.75;
+  const mid=(crop.yield_low+crop.yield_high)/2;
+  return(crop.yield_low+mid)/2*mult*(confidence/100);
+}
+
+function areaForServes(crop,servesPerDay,fertility,confidence){
+  const sg=crop.serve_g||75;
+  const annualKg=servesPerDay*sg*365/1000;
+  const yieldKgHa=subsistYield(crop,fertility,confidence)*1000;
+  if(yieldKgHa<=0)return null;
+  return annualKg/yieldKgHa;
+}
+
+function cropLabour(crop,mechSystem){return mechSystem?(crop.labour_mech||50):(crop.labour_hand||1000)}
+
+
+const OBJ_W={high:4, medium:1.5, low:0.4, off:0};
+
+
+function cropScore(crop, fertility, confidence, zone, objectives){
+  const obj = objectives || {minimiseLabour:"on", maximiseYield:"off", minimiseSpace:"off"};
+  let score = 0;
+  const adjYield = subsistYield(crop, fertility, confidence);
+  if(obj.minimiseLabour === "on"){
+    const lh = crop.labour_hand || 1000;
+    score += Math.max(0, 1 - lh / 2200) * 100;
+  }
+  if(obj.maximiseYield === "on"){
+    score += Math.min(adjYield / 20, 1) * 100;
+  }
+  if(obj.minimiseSpace === "on"){
+    const servesPerM2 = adjYield * 1e6 / (crop.serve_g || 75) / 10000;
+    score += Math.min(servesPerM2 / 150, 1) * 100;
+  }
+  return score;
+}
+
+function calcTotals(household){
+  let t={veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0};
+  household.forEach(m=>{const a=ADG[m.type];if(a){t.veg+=a.veg;t.fruit+=a.fruit;t.starchy+=a.starchy;t.protein+=a.protein;t.dairy+=a.dairy;t.oils+=(a.oils||0);}});
+  return t;
+}
+
+function cropPriorityTier(crop){
+  const userTex=fd.soilTexture, rain=fd.annualRainfall;
+  const opt=crop.text_opt||[], tol=crop.text_tol||[];
+  const inText = opt.includes(userTex) || opt.includes("wide") || userTex==="wide";
+  const inOptRain = crop.ropmn!=null && crop.ropmx!=null && rain>=crop.ropmn && rain<=crop.ropmx;
+  const inAbsRain = crop.rain_min!=null && crop.rain_max!=null && rain>=crop.rain_min && rain<=crop.rain_max;
+  if(inText && inOptRain) return 4;
+  if(inText && inAbsRain) return 3;
+  if(inOptRain) return 2;
+  if(inAbsRain) return 1;
+  return 0;
+}
+
+function fgToKey(fg){
+  if(!fg) return null;
+  const f = fg.toLowerCase();
+  // Oils & Fats must be checked before protein — "seed" appears in oil seeds
+  if(f.includes('oil') || (f.includes('fat') && !f.includes('protein'))) return 'oils';
+  // Protein MUST come before veg — "Lean Meats, Eggs, Nuts, Seeds & Legumes" contains
+  // "legume" but should map to protein, not veg.
+  if(f.includes('meat') || f.includes('egg') || f.includes('nut') || f.includes('seed')) return 'protein';
+  if(f.includes('dairy')) return 'dairy';
+  if(f.includes('vegetable') || f.includes('legume')) return 'veg';
+  if(f.includes('fruit')) return 'fruit';
+  if(f.includes('grain') || f.includes('cereal')) return 'starchy';
+  return null;
+}
+
+function getCropSeason(crop){
+  if(crop.perennial) return null;
+  const COOL = new Set(["may","jun","jul","aug","sep","oct"]); // Oct = cool
+  const WARM = new Set(["nov","dec","jan","feb","mar","apr"]); // Apr = warm
+  let cs = 0, ws = 0;
+  Object.entries(crop.months||{}).forEach(([m,v]) => {
+    const w = v==="P" ? 2 : v==="S" ? 1 : 0;
+    if(COOL.has(m)) cs += w;
+    if(WARM.has(m)) ws += w;
+  });
+  // Strictly one or the other — whichever has more harvest weight wins
+  return ws > cs ? "warm" : "cool"; // default to cool if equal or no data
+}
+
+function lsServesPerDay(out, count){
+  if(!count || count <= 0) return 0;
+  // qty_per_animal_yr is in out.unit (g, mL, eggs)
+  // serve_g converts to serves
+  const totalGPerYr = out.unit === "eggs"
+    ? count * out.qty_per_animal_yr * (out.serve_g || 55)  // eggs → grams
+    : count * out.qty_per_animal_yr;                         // already in g or mL
+  return (totalGPerYr / (out.serve_g || 100)) / 365;
+}
+
+const HERB_EXCLUSIONS = new Set([
+  "Basil","Chives","Coriander (Fresh)","Dill","Mint","Parsley","Parsley (Curly)","Rosemary"
+]);
+
+const STARCHY_OVERRIDES = new Set([
+  "Potato","Sweet Potato","Sweet Potato (Orange)","Sweet Potato (Purple)","Sweet Potato (White)",
+  "Cassava","Taro","Yam","Arrowroot","Chestnut","Breadfruit","Artichoke (Jerusalem)",
+]);
+
+function effectiveFoodGroup(crop){
+  if(STARCHY_OVERRIDES.has(crop.name)) return "Starches";
+  if(crop.food_group==="Starches") return "Starches";
+  if(crop.food_group==="Grain (Cereal) Foods") return "Starches";
+  return crop.food_group;
+}
+
+function isSuitable(crop){
+  const userZone = state.climateZone;
+  const userTex  = state.soilTexture;
+  // Both fields required — crops with no CLIZ or no TEXTR data are excluded
+  const cropZones = crop.cliz || [];
+  if(!cropZones.length) return false;
+  if(!cropZones.includes(userZone)) return false;
+  const cropTex = crop.text_tol || [];
+  if(!cropTex.length) return false;
+  if(userTex === "wide"){
+    // user has variable soil — accept any crop with texture data
+  } else {
+    if(!cropTex.includes(userTex) && !cropTex.includes("wide")) return false;
+  }
+  return true;
+}
+
+function cropLayer(crop){
+  const h = (crop && crop.h_max) || 0;
+  if(h >= 25) return "canopy";    // ≥25m — overstory nut/tropical trees
+  if(h >= 4)  return "trees";     // 4–24m — typical orchard fruit trees
+  return "plants";                 // <4m — shrubs, vines, annuals
+}
+
+function generateAnnualPlan(cropCandidates, residualTargets, availHa, params){
+  const s = params; // alias for minimal diff
+  const annualBudget = s.hoursPerWeek * 52;
+  const labourCap = annualBudget * 1.15;
+  const isMech = s.labourSystem === "mech";
+  const targets = residualTargets;
+  // objectives handled via objMode
+
+  // Build candidate pool with tier + objective score
+  const candidates = cropCandidates
+    .filter(c => !HERB_EXCLUSIONS.has(c.name))
+    .map(c => ({
+      crop: c,
+      tier: cropPriorityTier(c),
+      score: cropScore(c, s.fertility, s.confidence, s.climateZone, s.objectives),
+      adjYield: subsistYield(c, s.fertility, s.confidence),
+    }))
+    .filter(x => x.tier > 0)
+    .sort((a, b) => b.tier - a.tier || b.score - a.score);
+
+  let usedCoolHa=0, usedWarmHa=0, usedLabour=0;
+  const usedAnnualHa = () => usedCoolHa + usedWarmHa;
+  const achieved={veg:0, fruit:0, starchy:0, protein:0, dairy:0, oils:0};
+  const monthCoverage={}; MONTHS.forEach(m => monthCoverage[m]={veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0});
+  const selected=[];
+  const lsSelected = [];
+  
+
+  function cropEfficiency(crop){
+    const adjY = subsistYield(crop, s.fertility, s.confidence);
+    const srvPerHa = adjY * 1e6 / (crop.serve_g || 75);
+    const lph = cropLabour(crop, isMech);
+    return lph > 0 ? srvPerHa / lph : srvPerHa * 99;
+  }
+
+  function addAllocation(crop, allocHa, key){
+    const lph = cropLabour(crop, isMech);
+    const actualLabour = lph * allocHa;
+    const adjY = subsistYield(crop, s.fertility, s.confidence);
+    // Annual averages: total serves per year ÷ 365 days
+    const annualKg = allocHa * adjY * 1000;
+    const totalServesYr = annualKg * 1000 / (crop.serve_g || 75);
+    const actualServes = totalServesYr / 365;  // annual avg serves/day
+    achieved[key] += actualServes;
+    usedLabour += actualLabour;
+    if(crop.perennial){
+      usedPerennialHa += allocHa;
+      const layer = cropLayer(crop);
+      if(layer === "canopy") usedCanopyHa += allocHa;
+      else if(layer === "trees") usedTreesHa += allocHa;
+      else usedPerennialPlantsHa += allocHa;
+    } else {
+      const season = getCropSeason(crop);
+      if(season === "warm") usedWarmHa += allocHa;
+      else usedCoolHa += allocHa; // cool (default)
+    }
+
+    // Monthly: concentrate the year's harvest into the crop's actual harvest window
+    // P (primary) month = weight 1, S (shoulder) = weight 0.5
+    let harvestWeight = 0;
+    MONTHS.forEach(m => {
+      if(crop.months[m] === "P") harvestWeight += 1;
+      else if(crop.months[m] === "S") harvestWeight += 0.5;
+    });
+    if(harvestWeight > 0){
+      // Serves/day during one full primary month if all year's yield came out there
+      const perMonthBase = totalServesYr / harvestWeight / 30;
+      MONTHS.forEach(m => {
+        const v = crop.months[m];
+        const w = v === "P" ? 1 : v === "S" ? 0.5 : 0;
+        if(w > 0) monthCoverage[m][key] += perMonthBase * w;
+      });
+    }
+    // Byproduct: also credit secondary organ serves to their food group
+    if(crop.byproducts && crop.byproducts.length){
+      crop.byproducts.forEach(bp => {
+        const bpYieldTha = adjY * (bp.yield_fraction || 0);
+        const bpServesYr = allocHa * bpYieldTha * 1e6 / 75;
+        const bpKey = fgToKey(bp.food_group);
+        if(bpKey && achieved[bpKey] !== undefined){
+          achieved[bpKey] += bpServesYr / 365;
+          // Also spread into monthly coverage
+          const bpMonths = bp.months || crop.months;
+          let bpW = 0;
+          MONTHS.forEach(m => { if(bpMonths[m]==='P') bpW+=1; else if(bpMonths[m]==='S') bpW+=0.5; });
+          if(bpW > 0){
+            const bpBase = bpServesYr / bpW / 30;
+            MONTHS.forEach(m => {
+              const v = bpMonths[m];
+              const w = v==='P'?1:v==='S'?0.5:0;
+              if(w > 0 && monthCoverage[m][bpKey] !== undefined) monthCoverage[m][bpKey] += bpBase * w;
+            });
+          }
+        }
+      });
+    }
+    const existing = selected.find(e => e.crop.name === crop.name);
+    if(existing){
+      existing.allocHa += allocHa;
+      existing.serves += actualServes;
+      existing.labour += actualLabour;
+    } else {
+      selected.push({crop, allocHa, serves: actualServes, labour: actualLabour, tier: cropPriorityTier(crop)});
+    }
+  }
+
+  // ── PHASE 1: fill each food group to 100% sufficiency ────────────────────
+  // Determine planning mode (single-select objective)
+  const objMode = Object.keys(s.objectives||{}).find(k => s.objectives[k] === "on") || "balanced";
+
+  // Pre-compute mode-specific score for every candidate
+  // This is the PRIMARY sort key within a tier (replaces/extends cropScore)
+  candidates.forEach(cand => {
+    const adjY = cand.adjYield; // already computed
+    const sg = cand.crop.serve_g || 75;
+    if(objMode === "minimiseLabour"){
+      const lh = cand.crop.labour_hand || 1;
+      cand.modeScore = adjY * 1e6 / sg / lh;        // serves per labour-hr
+    } else if(objMode === "minimiseSpace"){
+      cand.modeScore = adjY * 1e6 / sg / 10000;     // serves per m2
+    } else if(objMode === "maximiseYield"){
+      cand.modeScore = adjY;                          // raw yield t/ha
+    } else {
+      cand.modeScore = cand.score;                    // balanced: cropScore 0-300
+    }
+  });
+
+  // Protein/dairy groups: livestock competes with crops scored on serves/labour-hr
+  const allPhase1Groups = [...FG_GROUPS];
+  // no dairy from livestock candidates in succession planner
+
+  allPhase1Groups.forEach(fg => {
+    const isDairy = fg === '__dairy__';
+    const key = isDairy ? 'dairy' : FG_KEY[fg];
+    const targetServes = isDairy ? (targets.dairy||0) : (targets[key]||0);
+    if(targetServes <= 0) return;
+    const isFresh = (key === "veg" || key === "fruit");
+    // Fresh crops always use tight cap for seasonal variety.
+    // Non-fresh: minimiseLabour/Space use a larger cap so one efficient crop
+    // can dominate the allocation, reducing total crop count.
+    const perCropCap = isFresh ? 0.20 * targetServes
+      : (objMode === "minimiseLabour" || objMode === "minimiseSpace")
+        ? 0.75 * targetServes   // one dominant crop + one supplement
+        : 0.50 * targetServes;  // balanced / maximiseYield
+    const fgCandidates = candidates.filter(x => effectiveFoodGroup(x.crop) === fg);
+    // no livestock candidates in succession planner
+    const usedNames = new Set(selected.filter(s => effectiveFoodGroup(s.crop) === (isDairy ? '__dairy__' : fg)).map(s => s.crop.name));
+
+    // Iterate; stop when target met AND (for fresh) worst month is at least 60%
+    let iter = 0;
+    while(iter++ < 40){
+      const sufficient = achieved[key] >= targetServes - 0.1;
+      const overPlanted = achieved[key] >= targetServes * 1.3;  // hard cap at 130% annual
+      let worstMonthCov = 1.0, peakMonthCov = 0;
+      if(isFresh){
+        MONTHS.forEach(m => {
+          const cov = (monthCoverage[m][key] || 0) / targetServes;
+          if(cov < worstMonthCov) worstMonthCov = cov;
+          if(cov > peakMonthCov) peakMonthCov = cov;
+        });
+      }
+      const seasonallyEven = !isFresh || worstMonthCov >= 0.5;
+      const gluttingHard = isFresh && peakMonthCov > 2.0;  // peak > 200% = stop
+      // minimiseSpace: stop exactly at sufficiency (don't gap-fill beyond 100%)
+      if(sufficient && (seasonallyEven || objMode === "minimiseSpace")) break;
+      if(overPlanted || gluttingHard) break;  // hard caps
+
+      // ── Best crop candidate ────────────────────────────────────────────────
+      // 3-key comparator: tier (hard gate) → primary key → secondary key
+      // Primary/secondary keys depend on planning mode:
+      //   balanced:       gap-fill → cropScore
+      //   minimiseLabour: modeScore (serves/labour-hr) → gap-fill
+      //   minimiseSpace:  modeScore (serves/m2)        → gap-fill
+      //   maximiseYield:  modeScore (yield t/ha)       → gap-fill
+      let best = null;
+      let bestTier = -1, bestPrimary = -Infinity, bestSecondary = -Infinity;
+
+      for(const cand of fgCandidates){
+        if(usedNames.has(cand.crop.name)) continue;
+        let gapFillScore = 0, glutPenalty = 0;
+        if(isFresh){
+          MONTHS.forEach(m => {
+            const v = cand.crop.months[m];
+            const w = v === "P" ? 1 : v === "S" ? 0.5 : 0;
+            if(w === 0) return;
+            const cov = (monthCoverage[m][key] || 0) / targetServes;
+            if(cov < 1.0) gapFillScore += (1.0 - cov) * w;
+            else glutPenalty += (cov - 1.0) * w * 1.0;
+          });
+          if(sufficient && (gapFillScore - glutPenalty) <= 0.1) continue;
+        }
+        const netGap = gapFillScore - glutPenalty;
+
+        // Assign primary and secondary keys by mode
+        // For fresh crops: gap-fill is always primary (seasonal variety preserved)
+        let primary, secondary;
+        if(isFresh || objMode === "balanced"){
+          primary   = netGap;
+          secondary = cand.modeScore;
+        } else {
+          // Non-fresh + non-balanced: objective metric is primary, gap is tiebreaker
+          primary   = cand.modeScore;
+          secondary = netGap;
+        }
+
+        const tierWins  = cand.tier > bestTier;
+        const tierTies  = cand.tier === bestTier;
+        const primWins  = tierTies && primary > bestPrimary + 1e-6;
+        const primTies  = tierTies && Math.abs(primary - bestPrimary) <= 1e-6;
+        const secWins   = primTies && secondary > bestSecondary + 1e-6;
+
+        if(tierWins || primWins || secWins){
+          best = cand;
+          bestTier = cand.tier; bestPrimary = primary; bestSecondary = secondary;
+        }
+      }
+
+      const bestLs = null; // livestock pre-computed
+
+      // ── Allocate best crop ────────────────────────────────────────────────────
+      if(best){
+        usedNames.add(best.crop.name);
+        const remaining = targetServes - achieved[key];
+        let wantServes = sufficient ? perCropCap * 0.25 : Math.min(remaining, perCropCap);
+        if(wantServes <= 0.01) continue;
+        const areaNeeded = areaForServes(best.crop, wantServes, s.fertility, s.confidence);
+        if(!areaNeeded || areaNeeded <= 0) continue;
+        const isAnnual2 = !best.crop.perennial;
+        let available;
+        if(isAnnual2){
+          const season2 = getCropSeason(best.crop);
+          available = season2==="warm" ? availHa - usedWarmHa : availHa - usedCoolHa;
+        } else { continue; } // no perennial allocation in succession
+        if(available <= 0.0005) continue;
+        let allocHa = Math.min(areaNeeded, available);
+        const lph = cropLabour(best.crop, isMech);
+        const labourLeft = labourCap - usedLabour;
+        if(lph * allocHa > labourLeft){ allocHa = lph > 0 ? labourLeft / lph : 0; if(allocHa <= 0.0005) continue; }
+        addAllocation(best.crop, allocHa, key);
+      } else { break; }
+    }
+  });
+
+  // Phase 1.5 result — hoisted so plan return can always access it
+  let p15NutsCovered = [];
+  let p15GapNamesAll = [];
+
+  // ── PHASE 1.5: Nutrient gap filling ──────────────────────────────────────
+  // After food-group serves are met, allocate remaining land to close NRV gaps.
+  // Only runs if the household is defined and there is remaining space.
+  // Crops are scored by nutrient density per ha for the worst-gap nutrient.
+  // Threshold: try to reach 85% of each daily NRV target.
+  if(s.household && s.household.length > 0){
+    const P15_THRESHOLD = 0.85;
+    const P15_MAX_CROPS = 6;
+    // Nutrients we don't try to fill via crops (either fine by default, or not trackable)
+    const P15_SKIP = new Set(["fat","carbs","p","na","cu","mn"]);
+
+    // Build running daily nutrient accumulator from current plan
+    const nutAccum = {};
+    selected.forEach(({crop, allocHa}) => {
+      if(!crop.nut) return;
+      const adjY = subsistYield(crop, s.fertility, s.confidence);
+      const annualKgPerHa = adjY * 1000;
+      Object.entries(crop.nut).forEach(([k, per100g]) => {
+        nutAccum[k] = (nutAccum[k]||0) + allocHa * annualKgPerHa * 1000 * per100g / 100 / 365;
+      });
+    });
+    // lsSelected NRV: pre-computed outside
+
+    // Get household daily NRV targets
+    const nrvDaily = householdNRV(s.household);
+
+    // Find nutrients below threshold, worst first
+    const p15Gaps = Object.entries(nrvDaily)
+      .filter(([k, need]) => !P15_SKIP.has(k) && need > 0 && (nutAccum[k]||0) < need * P15_THRESHOLD)
+      .sort((a,b) => (nutAccum[a[0]]||0)/a[1] - (nutAccum[b[0]]||0)/b[1]);
+    // Record which gap nutrients were found (regardless of whether space allowed action)
+    p15GapNamesAll = p15Gaps.slice(0, 6).map(([k]) => NUTRIENT_LABELS[k]).filter(Boolean);
+
+    if(p15Gaps.length > 0){
+      // Pool: ALL suitable checked crops with nut data — including those already in
+      // the Phase 1 plan. Phase 1.5 can top up an existing crop if it's the best
+      // source for a gap nutrient; that's often better than forcing a suboptimal new crop.
+      const p15Pool = candidates.filter(c =>
+        c.crop.nut && !HERB_EXCLUSIONS.has(c.crop.name)
+      );
+      // Separate tracking for crops already used within Phase 1.5 (prevents the same
+      // crop being picked for two different gap nutrients within the P15 budget).
+      const p15AllocNames = new Set();
+      const p15Handled = new Set();
+      let p15Count = 0;
+      for(const [gapKey, gapNeed] of p15Gaps){
+        if(p15Count >= P15_MAX_CROPS) break;
+        if(p15Handled.has(gapKey)) continue;
+        if((nutAccum[gapKey]||0) >= gapNeed * P15_THRESHOLD) continue;
+
+        // Score pool by annual nutrient yield per ha for this gap
+        const scored = p15Pool
+          .filter(c => !p15AllocNames.has(c.crop.name) && (c.crop.nut[gapKey]||0) > 0)
+          .map(c => ({ cand:c, nutPerHaYr: c.adjYield * 10000 * (c.crop.nut[gapKey]||0) }))
+          .filter(x => x.nutPerHaYr > 0)
+          .sort((a,b) => b.nutPerHaYr - a.nutPerHaYr);
+
+        if(!scored.length){ p15Handled.add(gapKey); continue; }
+
+        const {cand: top, nutPerHaYr} = scored[0];
+        const isAnn = !top.crop.perennial;
+        const s15 = isAnn ? getCropSeason(top.crop) : null;
+        const spaceLeft = isAnn
+          ? (s15==="warm" ? availHa - usedWarmHa : availHa - usedCoolHa)
+          : s.perennialHa - perennialFootprint();
+        if(spaceLeft < 0.005){ p15Handled.add(gapKey); continue; }
+
+        const lph15 = cropLabour(top.crop, isMech);
+        const labLeft15 = labourCap - usedLabour;
+        if(lph15 > 0 && labLeft15 < 0.5){ p15Handled.add(gapKey); continue; }
+
+        // Area needed to fill gap to threshold
+        const gapDaily = gapNeed * P15_THRESHOLD - (nutAccum[gapKey]||0);
+        let ha15 = nutPerHaYr > 0 ? (gapDaily * 365) / nutPerHaYr : 0;
+        ha15 = Math.min(ha15, spaceLeft * 0.35); // cap at 35% of remaining space
+        if(lph15 > 0) ha15 = Math.min(ha15, labLeft15 / lph15);
+        if(ha15 < 0.002){ p15Handled.add(gapKey); continue; }
+
+        const fgKey15 = FG_KEY[effectiveFoodGroup(top.crop)] || 'veg';
+        addAllocation(top.crop, ha15, fgKey15);
+        p15AllocNames.add(top.crop.name);
+        p15Count++;
+
+        // Update nutAccum and mark any nutrients now covered
+        const addedAnnKg = ha15 * top.adjYield * 1000;
+        Object.entries(top.crop.nut).forEach(([k, per100g]) => {
+          const dailyG = addedAnnKg * 1000 * per100g / 100 / 365;
+          nutAccum[k] = (nutAccum[k]||0) + dailyG;
+          if((nutAccum[k]||0) >= (nrvDaily[k]||0) * P15_THRESHOLD) p15Handled.add(k);
+        });
+        p15Handled.add(gapKey);
+      }
+      // Write results into hoisted variable for plan return
+      p15NutsCovered = [...p15Handled]
+        .filter(k => !["fat","carbs","p","na","cu","mn"].includes(k))
+        .map(k => NUTRIENT_LABELS[k]).filter(Boolean);
+    }
+  }
+
+  // (p15NutsCovered is set inside the Phase 1.5 block above)
+
+  // ── PHASE 2: maximiseYield → fill ALL remaining land/labour ──────────────
+  // Runs only for maximiseYield mode. Adds new crops AND tops up existing ones.
+  if(objMode === "maximiseYield"){
+    // Sort candidates by tier (suitability) then adjusted yield, highest first
+    const yieldOrder = [...candidates].sort((a, b) =>
+      b.tier - a.tier || b.adjYield - a.adjYield
+    );
+    // Livestock sorted by serves/day per step (most productive first)
+    const lsYieldOrder = [...lsCandidates].sort((a, b) => b.servesPerStep - a.servesPerStep);
+
+    let safety = 0;
+    while(safety++ < 300){
+      // Re-compute all remaining budgets each iteration
+      const coolLeft2    = availHa    - usedCoolHa;
+      const warmLeft2    = availHa    - usedWarmHa;
+      const perennialLeft = 0;
+      const labourLeft    = labourCap     - usedLabour;
+      const pastureLeft   = 0;
+
+      if(coolLeft2 < 0.001 && warmLeft2 < 0.001 && perennialLeft < 0.001 && labourLeft < 1 && pastureLeft < 0.001) break;
+
+      let allocated = false;
+
+      // ── Try crops first (highest yield crop that still has space + labour) ──
+      for(const cand of yieldOrder){
+        const isAnnual = !cand.crop.perennial;
+        const season2 = isAnnual ? getCropSeason(cand.crop) : null;
+        const spaceLeft = isAnnual
+          ? (season2==="cool" ? coolLeft2 : season2==="warm" ? warmLeft2 : Math.max(coolLeft2,warmLeft2))
+          : perennialLeft;
+        if(spaceLeft < 0.001) continue;
+        const lph = cropLabour(cand.crop, isMech);
+        const maxByLabour = lph > 0 ? Math.min(spaceLeft, labourLeft / lph) : spaceLeft;
+        // Allocate 25% of the remaining budget in each pass — fills budgets in ~4-5 passes
+        const allocHa = Math.min(spaceLeft * 0.25, maxByLabour);
+        if(allocHa < 0.0005) continue;
+        const fg  = effectiveFoodGroup(cand.crop);
+        const key = FG_KEY[fg];
+        if(!key) continue;
+        addAllocation(cand.crop, allocHa, key);
+        allocated = true;
+        break;  // one allocation per iteration so budgets are rechecked
+      }
+
+      // ── Then try livestock for remaining pasture / labour ──────────────────
+      if(!allocated && false){
+        for(const lc of lsYieldOrder){
+          if(lc.spaceHaPerStep > pastureLeft + 0.0001) continue;
+          if(lc.labourPerStep  > labourLeft  + 0.1)   continue;
+          const maxByPasture = Math.floor((pastureLeft + 0.0001) / lc.spaceHaPerStep);
+          const maxByLabour2 = lc.labourPerStep > 0
+            ? Math.floor(labourLeft / lc.labourPerStep) : maxByPasture;
+          const nSteps = Math.min(maxByPasture, maxByLabour2, 10);
+          if(nSteps < 1) continue;
+          addLivestockAllocation(lc, nSteps * lc.ls.step);
+          allocated = true;
+          break;
+        }
+      }
+
+      if(!allocated) break;
+    }
+  }
+
+  return {selected, lsSelected:[], achieved, targets, usedCoolHa, usedWarmHa, usedAnnualHa: usedCoolHa+usedWarmHa, usedLabour, annualBudget, monthCoverage, suitableCount: candidates.length, p15NutsCovered: p15NutsCovered||[], p15GapNamesAll: p15GapNamesAll||[]};
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LINEAR PROGRAMME (LP) PLAN GENERATION — OPTION D
+// ═══════════════════════════════════════════════════════════════════════════
+// Formulates farm planning as a constrained optimisation problem and solves
+// it with a Big-M simplex. Unlike the greedy generatePlan() above (which fills
+// food-group serves first, then patches nutrient gaps), the LP considers all
+// constraints and trade-offs jointly. Output is a true optimum (within the
+// modelling assumptions): minimum land use that meets household NRVs.
+//
+// Decision variables:
+//   x_i  ∈ [0,∞)  = hectares of crop i
+//   y_j  ∈ [0,∞)  = head count of livestock species j (continuous in LP,
+//                    rounded to species step after)
+//   u_n  ∈ [0,∞)  = unmet fraction of NRV for nutrient n (slack — penalised)
+//   v_g  ∈ [0,∞)  = unmet fraction of food-group g serves (slack — penalised)
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let fd = null, cy = 1, HZ = 25, yc = [], tlChart = null;
+const FG_COLORS = {veg:"#6B9E58",fruit:"#E8983A",starchy:"#C4A84A",protein:"#5878B4",oils:"#9E6B58",dairy:"#7AABB4"};
+const FG_LABELS = {veg:"Vegetables",fruit:"Fruit",starchy:"Grains",protein:"Protein",oils:"Oils & Fats",dairy:"Dairy"};
+
+// ── Perennial canopy / yield model ────────────────────────────────────────────
+function fpHa(c){ const r=((c.w_max||4)/2)+0.25; return Math.PI*r*r/10000; }
+function nT(c){ const fp=fpHa(c); return fp>0?Math.max(1,Math.floor(c.allocHa/fp)):1; }
+function cHaAt(c,age){ return nT(c)*fpHa(c)*Math.min(1,Math.pow(Math.max(0,age/((c.ytp||6)*1.5)),0.5)); }
+function totCHa(yr){ return fd.perennials.reduce((s,c)=>s+cHaAt(c,yr),0); }
+
+function perenYldTha(c,age){
+  const ffy=c.ffy||2,ytp=c.ytp||6,n=c.n||0.6,yh=c.yield_high||1;
+  if(age<ffy)return 0; if(ytp<=ffy)return yh;
+  return yh*Math.min(1,Math.pow(Math.max(0,(age-ffy)/(ytp-ffy)),n));
+}
+function perenSpd(c,age){ return c.allocHa*perenYldTha(c,age)*1e6/(c.adg_serve_g||150)/365; }
+
+// ── Load / init ───────────────────────────────────────────────────────────────
+function showErr(m){ document.getElementById("lerr").textContent=m; }
+
+function loadPlan(){
+  const code=document.getElementById("ic").value.trim();
+  if(!code){showErr("Paste export code first."); return;}
+  try{
+    const o=JSON.parse(decodeURIComponent(escape(atob(code))));
+    if(!o.annualCrops){ showErr("Use the v25+ Export for Succession Planner button."); return; }
+    initFarm(o);
+  }catch(e){ showErr("Cannot read code: "+e.message); }
+}
+
+function loadDemo(){
+  // Demo: Mediterranean/Perth household with perennials + annual crops
+  const demo = {"_type":"succession_export","_v":2,
+    "household":[{"type":"man_19_50"},{"type":"woman_19_50"},{"type":"child_9_11"}],
+    "hoursPerWeek":25,"labourSystem":"hand","fertility":"medium","confidence":75,
+    "soilTexture":"medium","annualRainfall":750,"climateZone":"Cs",
+    "annualHa":0.5,"perennialHa":0.8,"pastureHa":0.2,
+    "objectives":{"balanced":"on"},
+    "planSnapshot":[
+      {"name":"Apple","allocHa":0.12,"food_group":"Fruit","yield_high":25,"h_max":9,"w_max":9,"labour_hand":950,"adg_serve_g":150,"months":{"feb":"P","mar":"P","apr":"P"}},
+      {"name":"Avocado","allocHa":0.10,"food_group":"Oils & Fats","yield_high":12,"h_max":20,"w_max":10,"labour_hand":720,"adg_serve_g":20,"months":{"aug":"P","sep":"P","oct":"P"}},
+      {"name":"Orange","allocHa":0.10,"food_group":"Fruit","yield_high":20,"h_max":10,"w_max":8,"labour_hand":735,"adg_serve_g":150,"months":{"jul":"P","aug":"P","sep":"P"}},
+      {"name":"Peach","allocHa":0.08,"food_group":"Fruit","yield_high":20,"h_max":7,"w_max":7,"labour_hand":840,"adg_serve_g":150,"months":{"jan":"P","dec":"P"}},
+      {"name":"Macadamia","allocHa":0.15,"food_group":"Lean Meats, Eggs, Nuts, Seeds & Legumes","yield_high":3.5,"h_max":18,"w_max":12,"labour_hand":540,"adg_serve_g":30,"months":{"apr":"P","may":"P","jun":"P"}},
+      {"name":"Olive (Oil)","allocHa":0.10,"food_group":"Oils & Fats","yield_high":1.5,"h_max":10,"w_max":8,"labour_hand":920,"adg_serve_g":10,"months":{"oct":"P","nov":"P","dec":"P"}},
+      {"name":"Fig","allocHa":0.08,"food_group":"Fruit","yield_high":15,"h_max":10,"w_max":10,"labour_hand":750,"adg_serve_g":150,"months":{"jan":"P","feb":"P","dec":"P"}},
+      {"name":"Lemon","allocHa":0.07,"food_group":"Fruit","yield_high":30,"h_max":6,"w_max":6,"labour_hand":735,"adg_serve_g":150,"months":{"jul":"P","aug":"P"}},
+    ],
+    "lsSnapshot":[
+      {"name":"Chicken (Layers)","count":8,"food_group":"Dairy","yield_per_animal_kg_yr":18,"adg_serve_g":150,"labour_hrs_per_animal":8,"scalable":true},
+    ],
+    "annualCrops":[
+      {"name":"Broccoli","edible_part":"Floret","food_group":"Vegetables & Legumes","serve_g":75,"yield_low":5,"yield_high":20,"h_max":1,"w_max":0.7,"storability":"Short Storage","labour_mech":46,"labour_hand":995,"months":{"apr":"S","may":"P","jun":"P","jul":"P","aug":"P","sep":"P","oct":"S"},"perennial":false,"text_opt":["medium","organic"],"text_tol":["heavy","medium","light"],"tmin":3,"tmax":35,"ropmn":900,"ropmx":1500,"cliz":["Aw","Ar","Bs","Cf","Cs","Cw","Do","Dc","Df","Dw"],"nut":{"kcal":32,"protein":4,"ca":36,"fe":0.72,"vitA":36,"vitC":88}},
+      {"name":"Kale","edible_part":"Leaf","food_group":"Vegetables & Legumes","serve_g":75,"yield_low":10,"yield_high":40,"h_max":1.2,"w_max":0.7,"storability":"Short Storage","labour_mech":44,"labour_hand":925,"months":{"apr":"S","may":"P","jun":"P","jul":"P","aug":"P","sep":"P","oct":"S"},"perennial":false,"text_opt":["heavy","medium","light","organic"],"text_tol":["heavy","medium","light"],"tmin":7,"tmax":30,"ropmn":450,"ropmx":1000,"cliz":["Aw","Ar","Bs","Cf","Cs","Cw","Do","Dc","Df","Dw","E"],"nut":{"kcal":26,"protein":3.3,"ca":215,"fe":1.5,"vitA":192,"vitC":88}},
+      {"name":"Tomato","edible_part":"Fruit","food_group":"Vegetables & Legumes","serve_g":75,"yield_low":10,"yield_high":500,"h_max":2.5,"w_max":1.2,"storability":"Year-round Proc.","labour_mech":74,"labour_hand":1390,"months":{"nov":"S","dec":"P","jan":"P","feb":"P","mar":"P","apr":"S"},"perennial":false,"text_opt":["medium","organic"],"text_tol":["heavy","medium","light"],"tmin":7,"tmax":35,"ropmn":600,"ropmx":1300,"cliz":["Aw","Ar","Bs","Cf","Cs","Cw","Do","Dc","Df","Dw"],"nut":{"kcal":17,"protein":0.6,"ca":11,"fe":0.23,"vitA":34,"vitC":14}},
+      {"name":"Carrot","edible_part":"Root","food_group":"Vegetables & Legumes","serve_g":75,"yield_low":15,"yield_high":80,"h_max":0.5,"w_max":0.3,"storability":"Long Storage","labour_mech":42,"labour_hand":995,"months":{"mar":"S","apr":"P","may":"P","jun":"P","jul":"P","aug":"P","sep":"P","oct":"S"},"perennial":false,"text_opt":["medium","organic"],"text_tol":["heavy","medium","light"],"tmin":3,"tmax":30,"ropmn":600,"ropmx":1200,"cliz":["Aw","Bs","Cs","Do","Dc","Df","Dw"],"nut":{"kcal":35,"protein":0.6,"ca":26,"fe":0.21,"vitA":1640,"vitC":3}},
+      {"name":"Sweet Potato","edible_part":"Tuber","food_group":"Starches","serve_g":75,"yield_low":5,"yield_high":40,"h_max":0.5,"w_max":4,"storability":"Long Storage","labour_mech":45,"labour_hand":1140,"months":{"feb":"S","mar":"P","apr":"P","may":"P","jun":"S"},"perennial":false,"text_opt":["medium","light"],"text_tol":["heavy","medium","light"],"tmin":12,"tmax":35,"ropmn":750,"ropmx":1500,"cliz":["Aw","Ar","Bs","Cf","Cs","Cw"],"nut":{"kcal":65,"protein":1.4,"ca":27,"fe":0.42,"vitA":633,"vitC":14}},
+      {"name":"Potato","edible_part":"Tuber","food_group":"Starches","serve_g":75,"yield_low":8,"yield_high":60,"h_max":1,"w_max":0.8,"storability":"Long Storage","labour_mech":41,"labour_hand":1020,"months":{"jul":"S","aug":"S","nov":"P","dec":"P","jan":"P"},"perennial":false,"text_opt":["medium","organic"],"text_tol":["heavy","medium","light"],"tmin":7,"tmax":30,"ropmn":500,"ropmx":800,"cliz":["Aw","Ar","Bs","Cf","Cs","Cw","Do","Dc","Df","Dw"],"nut":{"kcal":58,"protein":2,"ca":3,"fe":0.45,"vitA":0,"vitC":16}},
+      {"name":"Chickpea","edible_part":"Seed","food_group":"Lean Meats, Eggs, Nuts, Seeds & Legumes","serve_g":150,"yield_low":0.5,"yield_high":4,"h_max":0.8,"w_max":0.5,"storability":"Long Storage","labour_mech":21,"labour_hand":685,"months":{"sep":"S","oct":"P","nov":"P","dec":"S"},"perennial":false,"text_opt":["heavy","medium"],"text_tol":["heavy","medium","light"],"tmin":7,"tmax":35,"ropmn":600,"ropmx":1000,"cliz":["Aw","Ar","Bw","Bs","Cf","Cs","Cw","Do","Dc","Df","Dw"],"nut":{"kcal":328,"protein":19.7,"ca":159,"fe":4.6,"vitA":11,"vitC":3}},
+      {"name":"Pea (Green)","edible_part":"Seed","food_group":"Lean Meats, Eggs, Nuts, Seeds & Legumes","serve_g":150,"yield_low":3,"yield_high":10,"h_max":2,"w_max":0.5,"storability":"Year-round Proc.","labour_mech":19,"labour_hand":605,"months":{"aug":"S","sep":"P","oct":"P","nov":"P","dec":"S"},"perennial":false,"text_opt":["heavy","medium","light"],"text_tol":["heavy","medium","light"],"tmin":4,"tmax":30,"ropmn":800,"ropmx":1200,"cliz":["Aw","Ar","Bs","Cf","Cs","Cw","Do","Dc","Df","Dw"],"nut":{"kcal":74,"protein":6.5,"ca":30,"fe":1.83,"vitA":44,"vitC":24}},
+      {"name":"Wheat (Whole)","edible_part":"Grain","food_group":"Grain (Cereal) Foods","serve_g":100,"yield_low":1,"yield_high":10,"h_max":1.2,"w_max":0.2,"storability":"Long Storage","labour_mech":11,"labour_hand":575,"months":{"may":"S","jun":"S","nov":"P","dec":"P"},"perennial":false,"text_opt":["medium","organic"],"text_tol":["heavy","medium"],"tmin":5,"tmax":27,"ropmn":750,"ropmx":900,"cliz":["Aw","Ar","Bw","Bs","Cf","Cs","Cw","Do","Dc","Df","Dw"],"nut":{"kcal":326,"protein":11.2,"ca":35,"fe":3.43,"vitA":0,"vitC":0}},
+      {"name":"Sesame Seed","edible_part":"Seed","food_group":"Oils & Fats","serve_g":10,"yield_low":0.2,"yield_high":1.5,"h_max":1.5,"w_max":0.4,"storability":"Long Storage","labour_mech":39,"labour_hand":1040,"months":{"apr":"P","may":"P"},"perennial":false,"text_opt":["medium"],"text_tol":["light","medium","heavy"],"tmin":10,"tmax":40,"ropmn":500,"ropmx":1000,"cliz":["Aw","Bs","Cf","Cs","Cw"],"nut":{"kcal":626,"protein":22.2,"ca":62,"fe":5.2,"vitA":1,"vitC":1}},
+    ]
+  };
+  initFarm(demo);
+}
+
+// ── Phenology data for perennials (ffy + ytp from embedded lookup) ─────────────
+const PHEN = {
+  "Apple":{ffy:3,ytp:8,n:0.60},"Avocado":{ffy:4,ytp:8,n:0.60},"Banana":{ffy:1,ytp:2,n:0.40},
+  "Orange":{ffy:3,ytp:7,n:0.60},"Peach":{ffy:3,ytp:6,n:0.55},"Macadamia":{ffy:5,ytp:12,n:0.65},
+  "Olive (Oil)":{ffy:5,ytp:12,n:0.65},"Olive (Table)":{ffy:5,ytp:12,n:0.65},
+  "Fig":{ffy:3,ytp:6,n:0.60},"Lemon":{ffy:3,ytp:6,n:0.60},"Lime":{ffy:3,ytp:6,n:0.60},
+  "Mandarin":{ffy:3,ytp:7,n:0.60},"Grapefruit":{ffy:3,ytp:7,n:0.60},"Tangelo":{ffy:3,ytp:7,n:0.60},
+  "Walnut":{ffy:5,ytp:15,n:0.70},"Pecan":{ffy:6,ytp:15,n:0.70},"Almond":{ffy:3,ytp:7,n:0.60},
+  "Chestnut":{ffy:5,ytp:15,n:0.70},"Hazelnut":{ffy:3,ytp:7,n:0.60},
+  "Mango":{ffy:4,ytp:10,n:0.65},"Lychee":{ffy:5,ytp:12,n:0.65},
+  "Passionfruit":{ffy:1,ytp:2,n:0.45},"Feijoa":{ffy:3,ytp:6,n:0.60},
+  "Pomegranate":{ffy:3,ytp:7,n:0.60},"Persimmon":{ffy:4,ytp:8,n:0.65},
+  "Mulberry":{ffy:2,ytp:5,n:0.55},"Guava":{ffy:2,ytp:5,n:0.55},
+  "Strawberry":{ffy:1,ytp:2,n:0.40},"Blueberry":{ffy:3,ytp:6,n:0.65},
+  "Grape":{ffy:3,ytp:6,n:0.60},"Kiwifruit (Green)":{ffy:3,ytp:7,n:0.60},
+  "Quince":{ffy:4,ytp:8,n:0.65},"Cherry":{ffy:4,ytp:8,n:0.65},
+  "Plum":{ffy:3,ytp:6,n:0.55},"Apricot":{ffy:3,ytp:6,n:0.55},
+  "Pear":{ffy:4,ytp:10,n:0.65},"Loquat":{ffy:3,ytp:6,n:0.60},
+  "Avocado":{ffy:4,ytp:8,n:0.60},"Cashew":{ffy:3,ytp:8,n:0.60},
+  "Date Palm":{ffy:5,ytp:15,n:0.65},"Coconut":{ffy:5,ytp:10,n:0.60},
+  "Pistachio":{ffy:5,ytp:15,n:0.70},"Brazil Nut":{ffy:8,ytp:25,n:0.80},
+  "Pine Nut":{ffy:15,ytp:25,n:0.80},"Macadamia":{ffy:5,ytp:12,n:0.65},
+  "Pigeon Pea":{ffy:1,ytp:2,n:0.50},"Moringa (Horseradish Tree)":{ffy:1,ytp:2,n:0.45},
+  "Tamarillo":{ffy:2,ytp:3,n:0.50},"Pawpaw / Papaya":{ffy:1,ytp:2,n:0.40},
+};
+
+function getPhen(name){ return PHEN[name] || {ffy:3,ytp:8,n:0.60}; }
+
+function initFarm(o){
+  const perenNames = new Set((o.planSnapshot||[]).map(s=>s.name));
+  fd = {
+    household: o.household || [],
+    hoursPerWeek: o.hoursPerWeek || 20,
+    labourSystem: o.labourSystem || "hand",
+    fertility: o.fertility || "medium",
+    confidence: o.confidence || 75,
+    soilTexture: o.soilTexture || "medium",
+    annualRainfall: o.annualRainfall || 750,
+    climateZone: o.climateZone || "Cs",
+    annualHa: o.annualHa || 0.5,
+    perennialHa: o.perennialHa || 0.5,
+    objectives: o.objectives || {balanced:"on"},
+    // Perennials enriched with phenology
+    perennials: (o.planSnapshot||[]).map(p => {
+      const ph = getPhen(p.name);
+      return {...p, ffy:ph.ffy, ytp:ph.ytp, n:ph.n, wm:p.w_max||4};
+    }),
+    livestock: o.lsSnapshot || [],
+    annualCrops: o.annualCrops || [],
+  };
+  fd.tgt = calcTotals(fd.household);
+  buildYearCache();
+  document.getElementById("ls").style.display="none";
+  document.getElementById("mn").style.display="block";
+  cy=1; render();
+}
+
+// ── Year computation ──────────────────────────────────────────────────────────
+function buildYearCache(){
+  yc=[];
+  for(let yr=1;yr<=HZ;yr++){
+    const ch = Math.min(totCHa(yr), fd.perennialHa);
+    const perenGap = Math.max(0, fd.perennialHa - ch);
+    const availHa = fd.annualHa + perenGap;
+
+    // Perennial contributions per food group (serves/day)
+    const pn={veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0};
+    const perenDetail = fd.perennials.map(c=>{
+      const spd = perenSpd(c,yr);
+      const k = fgToKey(c.food_group)||'veg';
+      pn[k]=(pn[k]||0)+spd;
+      return {name:c.name, spd, k, pct:Math.round(Math.min(100,(yr/((c.ytp||6)*1.5))*100)),
+              yt:perenYldTha(c,yr), ffy:c.ffy, ytp:c.ytp, allocHa:c.allocHa, food_group:c.food_group};
+    });
+
+    // Livestock contributions (static)
+    const ln={veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0};
+    fd.livestock.forEach(ls=>{
+      const spd=ls.yield_per_animal_kg_yr*ls.count*1000/(ls.adg_serve_g||150)/365;
+      const k=fgToKey(ls.food_group)||'protein';
+      ln[k]=(ln[k]||0)+spd;
+    });
+
+    // Residual targets for annual algorithm
+    const residual={};
+    Object.keys(fd.tgt).forEach(k=>{
+      residual[k]=Math.max(0, fd.tgt[k]-(pn[k]||0)-(ln[k]||0));
+    });
+
+    // Run annual plan
+    const plan = generateAnnualPlan(fd.annualCrops, residual, availHa, {
+      hoursPerWeek: fd.hoursPerWeek,
+      labourSystem: fd.labourSystem,
+      fertility: fd.fertility,
+      confidence: fd.confidence,
+      objectives: fd.objectives,
+      pastureHa: 0,
+    });
+
+    // Compute total coverage
+    const annualNut={veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0};
+    (plan.achieved||{}) && Object.keys(annualNut).forEach(k=>{
+      annualNut[k]=(plan.achieved||{})[k]||0;
+    });
+
+    const cov={};
+    Object.keys(fd.tgt).forEach(k=>{
+      const total = (pn[k]||0)+(ln[k]||0)+(annualNut[k]||0);
+      cov[k] = fd.tgt[k]>0 ? Math.min(150,Math.round(total/fd.tgt[k]*100)) : 100;
+    });
+    const avg = Math.round(Object.values(cov).reduce((s,v)=>s+v,0)/Object.keys(cov).length);
+
+    // Perennial coverage fraction (without annuals)
+    const perenOnlyCov={};
+    Object.keys(fd.tgt).forEach(k=>{
+      perenOnlyCov[k]=fd.tgt[k]>0?Math.min(100,Math.round(((pn[k]||0)+(ln[k]||0))/fd.tgt[k]*100)):100;
+    });
+
+    const totL = (plan.usedLabour||0) + fd.livestock.reduce((s,ls)=>s+ls.count*(ls.labour_hrs_per_animal||8),0);
+    const budL = (fd.hoursPerWeek||20)*52;
+
+    yc.push({yr,ch,perenGap,availHa,pn,ln,annualNut,perenDetail,cov,perenOnlyCov,avg,
+             plan,residual,totL,budL,labPct:Math.round(totL/budL*100)});
+  }
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+function render(){
+  const sn = yc[cy-1];
+  const hhSz = fd.household.length;
+  const fgKeys = Object.keys(FG_LABELS);
+
+  // Coverage bars for selected year — split perennial vs annual
+  const covBars = fgKeys.map(k=>{
+    const total = sn.cov[k]||0;
+    const pPct  = sn.perenOnlyCov[k]||0;
+    const aPct  = Math.max(0, total - pPct);
+    const tg    = total>=100?"tag-green":total>=70?"tag-amber":"tag-red";
+    return `<div style="margin:6px 0">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <span>${FG_LABELS[k]}</span>
+        <span>
+          <span style="font-size:10px;color:var(--glt)">&#x1F332; ${pPct}%</span>
+          <span style="font-size:10px;color:var(--warn);margin-left:6px">&#x1F33F; ${aPct}%</span>
+          <span class="tag ${tg}" style="margin-left:6px">${total}%</span>
+        </span>
+      </div>
+      <div style="height:10px;border-radius:4px;background:#E8E4D8;overflow:hidden;display:flex">
+        <div style="width:${Math.min(pPct,100)}%;background:var(--gdk);transition:width .3s"></div>
+        <div style="width:${Math.min(aPct,100)}%;background:var(--warn);opacity:.85;transition:width .3s"></div>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Annual crops table for this year
+  const planRows = (sn.plan.selected||[]).length
+    ? [...(sn.plan.selected||[])].sort((a,b)=>b.allocHa-a.allocHa).map(s=>`<tr>
+        <td style="padding:3px 6px"><strong>${s.crop.name}</strong></td>
+        <td style="padding:3px 6px;font-size:11px">${effectiveFoodGroup(s.crop).replace("Lean Meats, Eggs, Nuts, Seeds & Legumes","Protein").replace("Vegetables & Legumes","Veg")}</td>
+        <td style="padding:3px 6px;text-align:right">${Math.round(s.allocHa*10000)}m&#178;</td>
+        <td style="padding:3px 6px;text-align:right;font-size:11px">${s.serves.toFixed(1)} srv/d</td>
+      </tr>`).join("")
+    : `<tr><td colspan="4" style="padding:6px;color:var(--tmid)">No annual crops needed this year — perennials + livestock meeting all targets</td></tr>`;
+
+  // Perennial status for selected year
+  const perenRows = sn.perenDetail.map(p=>{
+    const producing = p.yr >= p.ffy;
+    const k = fgToKey(p.food_group)||'veg';
+    const col = FG_COLORS[k]||"#888";
+    const pct = sn.perenDetail.find(x=>x.name===p.name)?.pct||0;
+    return `<div style="margin:4px 0;font-size:11px;display:flex;align-items:center;gap:6px">
+      <div style="width:10px;height:10px;border-radius:50%;background:${producing?col:"#C8B99A"};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
+      </div>
+      <div style="width:80px;height:6px;background:#E8E4D8;border-radius:3px;overflow:hidden;flex-shrink:0">
+        <div style="width:${pct}%;height:100%;background:${col};border-radius:3px"></div>
+      </div>
+      <div style="width:40px;text-align:right;color:var(--tmid);flex-shrink:0">${pct}%</div>
+    </div>`;
+  }).join("");
+
+  const labTag = sn.labPct>110?"tr":sn.labPct>90?"ta":"tg";
+
+  document.getElementById("mn").innerHTML=`
+    <div class="hdr">
+      <h1 style="font-size:20px">&#x1F331; Farm Succession Planner</h1>
+      <div class="hdr-info">
+        <span class="chip">&#x1F465; <strong>${hhSz}</strong> people</span>
+        <span class="chip">&#x1F33E; ${fd.annualHa.toFixed(1)}ha annual + ${fd.perennialHa.toFixed(1)}ha perennial</span>
+        <span class="chip">&#x1F333; ${fd.perennials.length} perennial species</span>
+        <button class="btn" onclick="fd=null;document.getElementById('ls').style.display='flex';document.getElementById('mn').style.display='none'" style="font-size:12px;padding:4px 10px">&larr; New plan</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;color:var(--tmid);text-transform:uppercase;letter-spacing:.06em">Year</div>
+          <div style="font-size:32px;font-weight:700;color:var(--gdk);line-height:1">${cy}</div>
+        </div>
+        <input type="range" min="1" max="${HZ}" step="1" value="${cy}" oninput="cy=+this.value;render()" style="flex:1;min-width:180px;accent-color:var(--gdk)">
+        <div style="display:grid;grid-template-columns:repeat(4,auto);gap:16px">
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:700;color:var(--gdk)">${sn.availHa.toFixed(2)} ha</div>
+            <div style="font-size:10px;color:var(--tmid)">annual space</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:700;color:var(--gdk)">${Math.round(sn.ch/fd.perennialHa*100)}%</div>
+            <div style="font-size:10px;color:var(--tmid)">canopy fill</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:700;color:${sn.avg>=90?"var(--gdk)":sn.avg>=70?"var(--warn)":"var(--clay)"}">${sn.avg}%</div>
+            <div style="font-size:10px;color:var(--tmid)">overall ADG</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:700"><span class="tag ${labTag}">${sn.labPct}%</span></div>
+            <div style="font-size:10px;color:var(--tmid)">labour budget</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN TIMELINE -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        <h2 style="margin-bottom:0">Nutritional coverage over 25 years</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px">
+          ${Object.entries(FG_LABELS).map(([k,l])=>`<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:3px;background:${FG_COLORS[k]};display:inline-block;border-radius:2px"></span>${l}</span>`).join("")}
+          <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:3px;background:#2A5C20;display:inline-block;border-radius:2px"></span>Overall</span>
+        </div>
+      </div>
+      <div style="position:relative;height:260px"><canvas id="tlc" role="img" aria-label="Timeline chart showing ADG coverage over 25 years"></canvas></div>
+      <div style="margin-top:8px;font-size:11px;color:var(--tmid)">Drag the year slider above to explore any year. Dashed vertical line = selected year.</div>
+    </div>
+
+    <!-- PERENNIAL ESTABLISHMENT TIMELINE -->
+    <div class="card" style="margin-bottom:14px">
+      <h2>Perennial establishment timeline</h2>
+      <div style="overflow-x:auto">
+        <div id="gantt" style="min-width:600px"></div>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:var(--tmid);display:flex;gap:16px">
+        <span><span style="display:inline-block;width:12px;height:8px;background:#C8B99A;border-radius:2px"></span> Establishing (no harvest)</span>
+        <span><span style="display:inline-block;width:12px;height:8px;background:#6B9E58;border-radius:2px;opacity:.5"></span> Fruiting (ramping to peak)</span>
+        <span><span style="display:inline-block;width:12px;height:8px;background:#2A5C20;border-radius:2px"></span> Peak production</span>
+        <span><span style="display:inline-block;width:4px;height:8px;background:rgba(42,92,32,.5);border:1px solid #2A5C20;border-radius:1px"></span> Current year</span>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
+      <!-- COVERAGE BREAKDOWN -->
+      <div class="card">
+        <h2>Year ${cy} coverage breakdown</h2>
+        <div style="font-size:11px;color:var(--tmid);margin-bottom:8px">
+          &#x1F332; Perennial (incl. livestock) &nbsp;&#x1F33F; Annual crops
+        </div>
+        ${covBars}
+      </div>
+
+      <!-- ANNUAL PLAN -->
+      <div class="card">
+        <h2>Year ${cy} annual crops</h2>
+        <p style="font-size:11px;color:var(--tmid);margin-bottom:8px">
+          ${sn.availHa.toFixed(2)} ha available &middot; filling residual ADG gaps
+        </p>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr>
+            <th style="text-align:left;padding:3px 6px;border-bottom:2px solid var(--bdr);font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--tmid)">Crop</th>
+            <th style="text-align:left;padding:3px 6px;border-bottom:2px solid var(--bdr);font-size:10px;text-transform:uppercase;color:var(--tmid)">Group</th>
+            <th style="text-align:right;padding:3px 6px;border-bottom:2px solid var(--bdr);font-size:10px;text-transform:uppercase;color:var(--tmid)">Area</th>
+            <th style="text-align:right;padding:3px 6px;border-bottom:2px solid var(--bdr);font-size:10px;text-transform:uppercase;color:var(--tmid)">Output</th>
+          </tr></thead>
+          <tbody>${planRows}</tbody>
+        </table>
+      </div>
+
+      <!-- PERENNIAL STATUS -->
+      <div class="card">
+        <h2>Perennial status yr ${cy}</h2>
+        <div style="font-size:11px;color:var(--tmid);margin-bottom:8px">Bar = % of peak yield reached</div>
+        <div style="max-height:280px;overflow-y:auto">${perenRows}</div>
+      </div>
+    </div>
+  `;
+
+  renderTimeline();
+  renderGantt();
+}
+
+function renderTimeline(){
+  const el=document.getElementById("tlc"); if(!el)return;
+  if(tlChart){tlChart.destroy();tlChart=null;}
+  const lbs=yc.map(y=>"Yr "+y.yr);
+  const ds=Object.entries(FG_LABELS).map(([k,l])=>({
+    label:l, data:yc.map(y=>Math.min(150,y.cov[k]||0)),
+    borderColor:FG_COLORS[k], backgroundColor:"transparent",
+    tension:0.35, pointRadius:0, borderWidth:1.8,
+  }));
+  ds.push({label:"Overall",data:yc.map(y=>y.avg),
+    borderColor:"#2A5C20",backgroundColor:"rgba(42,92,32,0.06)",fill:true,
+    tension:0.35,pointRadius:0,borderWidth:3});
+  // Perennial-only line (dashed)
+  ds.push({label:"Perennial only",
+    data:yc.map(y=>Math.round(Object.values(y.perenOnlyCov).reduce((s,v)=>s+v,0)/Object.keys(y.perenOnlyCov).length)),
+    borderColor:"#2A5C20",backgroundColor:"transparent",borderDash:[4,3],
+    tension:0.35,pointRadius:0,borderWidth:1.5});
+
+  const vl={id:"vl",afterDraw(ch){
+    const idx=cy-1; const m=ch.getDatasetMeta(0); if(!m?.data[idx])return;
+    const x=m.data[idx].x; const c2=ch.ctx;
+    c2.save();c2.beginPath();c2.moveTo(x,ch.chartArea.top);c2.lineTo(x,ch.chartArea.bottom);
+    c2.strokeStyle="rgba(42,92,32,.5)";c2.lineWidth=1.5;c2.setLineDash([4,3]);c2.stroke();c2.restore();
+  }};
+
+  tlChart=new Chart(el,{type:"line",plugins:[vl],data:{labels:lbs,datasets:ds},options:{
+    responsive:true,maintainAspectRatio:false,
+    interaction:{mode:"index",intersect:false},
+    plugins:{
+      legend:{display:false},
+      tooltip:{backgroundColor:"#FDFAF4",borderColor:"#D4C9A8",borderWidth:1,
+        titleColor:"#2C2C1E",bodyColor:"#6B6455",padding:8,
+        callbacks:{label:i=>` ${i.dataset.label}: ${i.parsed.y}%`}},
+      annotation:{annotations:{line100:{type:"line",yMin:100,yMax:100,
+        borderColor:"rgba(42,92,32,.4)",borderWidth:1.5,borderDash:[6,4],
+        label:{display:true,content:"100% target",position:"end",
+          font:{size:10},color:"var(--gdk)",backgroundColor:"transparent"}}}}
+    },
+    scales:{
+      x:{ticks:{color:"#888",font:{size:10},maxTicksLimit:13},grid:{color:"rgba(0,0,0,.04)"},border:{color:"rgba(0,0,0,.1)"}},
+      y:{min:0,max:155,ticks:{color:"#888",font:{size:10},callback:v=>v+"%"},grid:{color:"rgba(0,0,0,.04)"},border:{color:"rgba(0,0,0,.1)"}},
+    }
+  }});
+}
+
+function renderGantt(){
+  const el=document.getElementById("gantt"); if(!el)return;
+  const W=Math.max(el.clientWidth||700,700);
+  const ROW=22, PAD=6, LABEL=160, BAR=W-LABEL-40;
+  const years=HZ;
+  const xScale=i=>LABEL+(i/years)*BAR;
+  const perens=[...fd.perennials].sort((a,b)=>(a.ytp||8)-(b.ytp||8));
+
+  let svg=`<svg width="${W}" height="${perens.length*(ROW+PAD)+30}" xmlns="http://www.w3.org/2000/svg" style="font-family:system-ui,sans-serif">`;
+  // Year axis
+  svg+=`<line x1="${LABEL}" y1="20" x2="${LABEL+BAR}" y2="20" stroke="#C8B99A" stroke-width="1"/>`;
+  for(let y=0;y<=years;y+=5){
+    const x=xScale(y);
+    svg+=`<line x1="${x}" y1="16" x2="${x}" y2="24" stroke="#C8B99A" stroke-width="1"/>`;
+    if(y>0)svg+=`<text x="${x}" y="14" text-anchor="middle" font-size="9" fill="#7A6A54">Yr ${y}</text>`;
+  }
+  // Current year marker
+  const cx=xScale(cy-1);
+  svg+=`<line x1="${cx}" y1="0" x2="${cx}" y2="${perens.length*(ROW+PAD)+30}" stroke="rgba(42,92,32,.5)" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+
+  perens.forEach((p,i)=>{
+    const y0=24+i*(ROW+PAD);
+    const k=fgToKey(p.food_group)||'veg';
+    const col=FG_COLORS[k]||"#888";
+    const ffy=p.ffy||3, ytp=p.ytp||8;
+    // Crop name
+    svg+=`<text x="${LABEL-6}" y="${y0+ROW/2+4}" text-anchor="end" font-size="11" fill="#2C2C1E" font-weight="500">${p.name.length>18?p.name.slice(0,17)+"…":p.name}</text>`;
+    // Full bar background
+    svg+=`<rect x="${LABEL}" y="${y0}" width="${BAR}" height="${ROW}" rx="3" fill="#F0EBE0"/>`;
+    // Establishment phase
+    const x1=xScale(0), x2=xScale(Math.min(ffy,years));
+    svg+=`<rect x="${x1}" y="${y0}" width="${x2-x1}" height="${ROW}" rx="3" fill="#C8B99A"/>`;
+    // Ramp phase  
+    if(ffy<years){
+      const x3=xScale(Math.min(ytp,years));
+      svg+=`<rect x="${x2}" y="${y0}" width="${x3-x2}" height="${ROW}" rx="0" fill="${col}" opacity=".5"/>`;
+      // Peak phase
+      if(ytp<years){
+        const x4=xScale(years);
+        svg+=`<rect x="${x3}" y="${y0}" width="${x4-x3}" height="${ROW}" rx="0" fill="${col}"/>`;
+      }
+    }
+    // Label on bar
+    const midX=(xScale(0)+xScale(Math.min(ffy,years)))/2;
+    if(ffy>=3) svg+=`<text x="${midX}" y="${y0+ROW/2+4}" text-anchor="middle" font-size="9" fill="#7A6A54">est.</text>`;
+    // Current year yield dot
+    if(cy>=ffy){
+      const dot_x=xScale(cy-1);
+      const pct=sn_pct(p);
+      if(pct>0){
+        svg+=`<circle cx="${dot_x}" cy="${y0+ROW/2}" r="${Math.max(2,ROW/2*Math.min(pct/100,1))}" fill="${col}" stroke="#fff" stroke-width="1" opacity=".9"/>`;
+        svg+=`<text x="${dot_x+6}" y="${y0+ROW/2+4}" font-size="9" fill="${col}" font-weight="700">${pct}%</text>`;
+      }
+    }
+  });
+  svg+="</svg>";
+  el.innerHTML=svg;
+}
+
+function sn_pct(p){
+  const snap=yc[cy-1];
+  const pd=snap.perenDetail.find(x=>x.name===p.name);
+  return pd?pd.pct:0;
+}
+
+</script>
+</body>
+</html>
