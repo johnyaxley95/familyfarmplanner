@@ -1041,6 +1041,64 @@ function composeGuilds(siteModel, s){
   });
 }
 
+// Per-tier land demands for the proximity-zone redesign. Seasonal annual beds
+// share land, so the annual demand is max(warm, cool); perennials and nuts use
+// their max-across-canopy-layers footprint. Tier 3 = nuts/grain/seeds.
+function zoneAreaDemands(plan){
+  if(!plan || !plan.selected) return {annualHa:0, perennialHa:0, nutHa:0};
+  let warmT1=0, coolT1=0, nutAnnual=0;
+  const peren={2:{canopy:0,trees:0,plants:0}, 3:{canopy:0,trees:0,plants:0}};
+  plan.selected.forEach(({crop, allocHa})=>{
+    if(!crop || !(allocHa>0)) return;
+    const t=guildTier(crop);
+    if(!crop.perennial){
+      if(t===3) nutAnnual+=allocHa;
+      else if(getCropSeason(crop)==="warm") warmT1+=allocHa; else coolT1+=allocHa;
+    } else {
+      const b=(t===3)?peren[3]:peren[2]; const L=cropLayer(crop);
+      b[L]=(b[L]||0)+allocHa;
+    }
+  });
+  const fp=b=>Math.max(b.canopy,b.trees,b.plants);
+  return { annualHa:Math.max(warmT1,coolT1), perennialHa:fp(peren[2]), nutHa:fp(peren[3])+nutAnnual };
+}
+
+// Group the plan's crops by classification tier, then into guilds within each
+// tier (hydrozone + soil overlap + drainage), arranged tall→short / sun→pole.
+// Each guild carries a footprintHa (max across canopy layers) for cluster sizing.
+// Returns {1:[guild…], 2:[…], 3:[…]}. Used by the spatial cluster carver.
+function tierGuilds(plan){
+  const out={1:[],2:[],3:[]};
+  if(!plan || !plan.selected) return out;
+  const byTier={1:[],2:[],3:[]};
+  plan.selected.forEach(({crop, allocHa})=>{
+    if(!crop || !(allocHa>0)) return;
+    const t=guildTier(crop);
+    const layer = crop.perennial ? cropLayer(crop) : "annual";
+    byTier[t].push({name:crop.name, ha:allocHa, layer, h_max:crop.h_max||0, w_max:crop.w_max||0,
+      phenology:cropPhenology(crop), nfix:!!crop.nfix, dep:crop.dep||"",
+      hydro:hydrozoneBand(crop), crop});
+  });
+  const phenoRank=ph=>ph==="deciduous"?0:ph==="annual"?1:2;
+  [1,2,3].forEach(t=>{
+    const groups=[];
+    byTier[t].forEach(it=>{
+      let g=groups.find(G=>G.hydro===it.hydro && G.members.every(m=>soilOverlap(m.crop,it.crop)&&drainageCompatible(m.crop,it.crop)));
+      if(!g){ g={hydro:it.hydro, members:[]}; groups.push(g); }
+      g.members.push(it);
+    });
+    out[t]=groups.map((g,gi)=>{
+      const byLayer={}; g.members.forEach(m=>{ byLayer[m.layer]=(byLayer[m.layer]||0)+m.ha; });
+      const footprintHa=Math.max(0,...Object.values(byLayer));
+      const crops=g.members.slice()
+        .sort((a,b)=>phenoRank(a.phenology)-phenoRank(b.phenology)||(b.h_max-a.h_max))
+        .map(m=>({name:m.name, ha:m.ha, layer:m.layer, h_max:m.h_max, w_max:m.w_max, phenology:m.phenology, nfix:m.nfix, dep:m.dep}));
+      return {id:gi+1, tier:t, hydrozone:g.hydro, footprintHa, crops};
+    });
+  });
+  return out;
+}
+
 // ── Helpers ────────────────────────────────────────────────
 // Suitability grade: Ideal / Suitable / Unsuitable
 function subsistYield(crop,fertility,confidence){
@@ -3593,6 +3651,8 @@ function renderStep4(){
   // Generate plan if not cached. Use LP solver if nutrient-LP mode is active.
   if(!state.plan){
     state.plan = generatePlan(state);
+    if(state.plan){ state.plan.zoneDemand = zoneAreaDemands(state.plan); state.plan.tierGuilds = tierGuilds(state.plan);
+      try{ state.plan.pondHa = state.irrigationDam ? (sizeDam(state.plan).footprintHa||0) : (state.plan.usedSurfaceWaterHa||0); }catch(e){ state.plan.pondHa = state.plan.usedSurfaceWaterHa||0; } }
     // Stage-6 step 1: once the nutrition plan exists, site its crops onto the real
     // per-facet areas (only when a Site Model is present). Never alters the plan's
     // crop quantities — placement is strictly downstream of allocation.
@@ -5389,6 +5449,16 @@ function renderSpatialStep(){
       <p style="color:var(--text-mid)">Draw your farm boundary on the map, run terrain analysis and stage-4 design, then click <b>Apply Site Model to Planner</b>.</p>
       <p style="color:var(--text-mid);font-size:12px">Without a site model the planner uses the annual/perennial area budgets you entered on Farm Details.</p>
     </div>`;
+  }
+  // Self-heal: any step may have generated the plan without the Stage-6 spatial
+  // computations, so ensure plan + zone demands + placement + guilds exist here.
+  if(!state.plan) state.plan = generatePlan(state);
+  if(state.plan && !state.plan.zoneDemand) state.plan.zoneDemand = zoneAreaDemands(state.plan);
+  if(state.plan && !state.plan.tierGuilds) state.plan.tierGuilds = tierGuilds(state.plan);
+  if(state.plan && state.plan.pondHa==null){ try{ state.plan.pondHa = state.irrigationDam ? (sizeDam(state.plan).footprintHa||0) : (state.plan.usedSurfaceWaterHa||0); }catch(e){ state.plan.pondHa = state.plan.usedSurfaceWaterHa||0; } }
+  if(state.plan && !state.plan.placement){
+    state.plan.placement = placeCropsOnFacets(state.plan, sm, state);
+    composeGuilds(sm, state);
   }
   const totalZoneHa=sm.zones.reduce((t,z)=>t+z.area_ha,0);
   const totalDamYield=sm.water.dams.reduce((t,d)=>t+(d.yield_kL||0),0);

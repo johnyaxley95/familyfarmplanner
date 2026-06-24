@@ -110,6 +110,10 @@
         <div class="searchnote" id="sp-searchnote">Trace your block with the map toolbar (top-left), then sample or import.</div>
         <button class="ghost" id="sp-parcelMode" style="margin-top:8px;width:100%;">Click-to-load legal parcel (WA)</button>
         <div class="searchnote" id="sp-parcelnote"></div>
+        <button class="ghost" id="sp-dwelling" style="margin-top:8px;width:100%;">🏠 Place dwelling (proximity-zone seed)</button>
+        <div class="sp-field" style="margin-top:6px"><label>Dwelling / yard radius (m)</label><input id="sp-dwell-rad" type="number" min="3" max="100" step="1" value="15" /></div>
+        <div class="sp-field" style="margin-top:6px"><label>Tree spacing × <span id="sp-treespace-v">1.0</span></label><input id="sp-treespace" type="range" min="0.6" max="2" step="0.1" value="1" /></div>
+        <div class="searchnote" id="sp-dwellingnote"></div>
       </div>
 
       <div class="sp-block">
@@ -186,8 +190,11 @@
           <button data-layer="flow" class="lyr">Water flow</button>
           <button data-layer="ponding" class="lyr">Ponding</button>
           <button data-layer="wetness" class="lyr">Wetness</button>
+          <button data-layer="topo" class="lyr">Topography</button>
           <button data-layer="facets" class="lyr s4" style="display:none">Facets</button>
           <button data-layer="waterplan" class="lyr s4" style="display:none">Water plan</button>
+          <button data-layer="guilds" class="lyr s4" style="display:none">Crops</button>
+          <button data-layer="proximity" class="lyr s4" style="display:none">Zones</button>
         </div>
         <div id="sp-legend"></div>
         <div id="sp-astats"></div>
